@@ -4,7 +4,6 @@
 using StagFDTools, StagFDTools.StokesJustPIC, StagFDTools.Rheology, ExtendableSparse, StaticArrays, Plots, LinearAlgebra, SparseArrays, Printf
 import Statistics:mean
 using DifferentiationInterface
-using Enzyme  
 using TimerOutputs
 using MAT
 using Plots
