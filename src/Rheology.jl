@@ -267,7 +267,7 @@ end
 return_mapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δt, comp, ::Nothing, phases) = τII, P, 0.0
 
 function return_mapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δt, comp, pl::DruckerPrager, phases)
-    return dp_return_mapping(τII, P, ηvep, comp, β, Δt,
+    return AnalyticalDPReturnMapping(τII, P, ηvep, comp, β, Δt,
         pl.C[phases], pl.cosϕ[phases], pl.sinϕ[phases], pl.sinψ[phases], pl.ηvp[phases])
 end
 

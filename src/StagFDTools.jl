@@ -28,8 +28,8 @@ export SetBCPf1, SetBCPt1, SetBCVx1, SetBCVy1
 
 include("materials.jl")
 export Materials, initialize_materials, preprocess!, preprocess
-export AbstractPlasticity, DruckerPrager, DruckerHyperbolic, DruckerAniso, Golchin2021, Kiss2023
-export initialize, initialize_plasticity
+export AbstractPlasticity, DruckerPrager, DruckerHyperbolic, DruckerAniso, Golchin2021, Kiss2023, Tensile
+export initialize_materials
 
 # module markers
 #     include("markers.jl")

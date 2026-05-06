@@ -85,9 +85,12 @@ Base.@kwdef struct Materials{P<:AbstractPlasticity}
     G::Vector{Float64} = Float64[]
     β::Vector{Float64} = Float64[]
     B::Vector{Float64} = Float64[]
-    plasticity::P = DruckerPrager()
+    plasticity::P = NoPlasticity()
     compressible::Bool = false
+    phase_avg::Symbol = :arithmetic
 end
+
+struct NoPlasticity <: AbstractPlasticity end
 
 initialize(::Type{DruckerPrager}, n::Integer) = DruckerPrager(
     C=1e50 * ones(n),
@@ -154,11 +157,24 @@ initialize(::Type{Kiss2023}, n::Integer) = Kiss2023(
     τ2=ones(n),
 )
 
-initialize(::Type{Nothing}, ::Integer) = nothing
+initialize(::Type{Tensile}, n::Integer) = Tensile(
+    σT=ones(n),
+    C=1e50 * ones(n),
+    ϕ=ones(n),
+    ψ=ones(n),
+    ηvp=ones(n),
+    cosϕ=ones(n),
+    sinϕ=ones(n),
+    sinψ=ones(n),
+)
 
-function initialize(::Type{Materials}, nphases::Integer;
-    plasticity=DruckerPrager(),
-    compressible::Bool=false)
+initialize(::Type{NoPlasticity}, ::Integer) = NoPlasticity()
+
+function initialize_materials(nphases::Integer;
+    plasticity=NoPlasticity(),
+    compressible::Bool=false,
+    phase_avg::Symbol=:arithmetic)
+    P = plasticity isa Type ? plasticity : typeof(plasticity)
     return Materials(
         ρ=ones(nphases),
         n=ones(nphases),
@@ -167,17 +183,11 @@ function initialize(::Type{Materials}, nphases::Integer;
         G=1e50 * ones(nphases),
         β=1e-50 * ones(nphases),
         B=ones(nphases),
-        plasticity=initialize_plasticity(plasticity, nphases),
+        plasticity=initialize(P, nphases),
         compressible=compressible,
+        phase_avg=phase_avg
     )
 end
-
-initialize_materials(nphases::Integer; kwargs...) = initialize(Materials, nphases; kwargs...)
-# initialize_plasticity(n::Integer) = initialize(DruckerPrager, n)
-initialize_plasticity(::Type{Nothing}, n::Integer) = initialize(Nothing, n)
-initialize_plasticity(::Type{T}, n::Integer) where {T<:AbstractPlasticity} = initialize(T, n)
-initialize_plasticity(::Nothing, n::Integer) = initialize(Nothing, n)
-initialize_plasticity(p::AbstractPlasticity, n::Integer) = initialize(typeof(p), n)
 
 function preprocess!(dp::DruckerPrager)
     @. dp.cosϕ = cosd(dp.ϕ)
@@ -197,8 +207,6 @@ function preprocess!(da::DruckerAniso)
     @. da.sinψ = sind(da.ψ)
 end
 
-preprocess!(::Nothing) = nothing
-
 function preprocess!(g::Golchin2021)
     @. g.cosϕ = cosd(g.ϕ)
     @. g.sinϕ = sind(g.ϕ)
@@ -211,9 +219,17 @@ function preprocess!(k::Kiss2023)
     @. k.sinψ = sind(k.ψ)
 end
 
+function preprocess!(t::Tensile)
+    @. t.cosϕ = cosd(t.ϕ)
+    @. t.sinϕ = sind(t.ϕ)
+    @. t.sinψ = sind(t.ψ)
+end
+
 function preprocess!(mat::Materials)
     @. mat.B = (2 * mat.η0)^(-mat.n)
     preprocess!(mat.plasticity)
 end
+
+preprocess!(::NoPlasticity) = nothing
 
 preprocess(x) = (preprocess!(x); x)

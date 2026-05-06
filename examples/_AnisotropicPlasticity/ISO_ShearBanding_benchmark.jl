@@ -24,7 +24,7 @@ end
 function section(εII, Δ, nc, materials, L)
 
     # Angle of the section: Roscoe angle
-    θ = 45. - (materials.ϕ[1] + materials.ψ[1])/4
+    θ = 45. - (materials.plasticity.ϕ[1] + materials.plasticity.ψ[1])/4
     # θrad = deg2rad(θ)
 
     # Section initialisation
@@ -106,8 +106,9 @@ end
 @views function main(nc, flag, res)
     #--------------------------------------------#
 
-    # Markers per cell
+    # Markers
     nmpc = (x = 4, y = 4)
+    noise = true
 
     # Scaling
     sc = (σ = 1, L = 1, t = 1)
@@ -119,34 +120,24 @@ end
                           0  ε̇bg ]) 
     bulk_rate = D_BC[4]
 
-    # Material parameters
-    materials = ( 
-        compressible = true,
-        plasticity   = :DruckerPrager,
-        phase_avg    = :arithmetic,
-        ρ    = [1.0   1.0],
-        g    = [0.    0.],
-        n    = [1.0    1.0  ],
-        η0   = [2e50    2e50 ]./sc.t./sc.σ, 
-        G    = [1.0    0.25  ]./sc.σ,
-        C    = [1.74e-4    1.74e-4 ]./sc.σ,
-        ϕ    = [30.    30.  ],
-        ηvp  = [2e3    2e3  ]./sc.t./sc.σ,
-        β    = [0.5   0.5 ]./sc.σ,
-        ψ    = [10.0    10.0  ],
-        B    = [0.0    0.0  ],
-        cosϕ = [0.0    0.0  ],
-        sinϕ = [0.0    0.0  ],
-        sinψ = [0.0    0.0  ],
-    )
-    noise = true
-    # For power law
-    materials.B   .= (2*materials.η0).^(-materials.n)
+    # Materials initialization
+    materials = initialize_materials(2; plasticity=DruckerPrager,compressible=true)
+    # Parameters
+    params_bg = (ρ=1.0, n=1.0, η0=2e50, G=1.0, C=1.74e-4, ϕ=30., ηvp=2e3, β=0.5, ψ=10., ε̇=5e-11, rad=25e-4)
+    params_in = (ρ=1.0, n=1.0, η0=2e50, G=0.25, C=1.74e-4, ϕ=30., ηvp=2e3, β=0.5, ψ=10.)
 
-    # For plasticity
-    @. materials.cosϕ  = cosd(materials.ϕ)
-    @. materials.sinϕ  = sind(materials.ϕ)
-    @. materials.sinψ  = sind(materials.ψ)
+    materials.g .= [0. , 0.]
+    materials.ρ .= [params_bg.ρ , params_in.ρ]
+    materials.n .= [params_bg.n , params_in.n]
+    materials.η0 .= [params_bg.η0 , params_in.η0]
+    materials.G .= [params_bg.G , params_in.G]
+    materials.β .= [params_bg.β , params_in.β]
+    materials.plasticity.C .= [params_bg.C , params_in.C]
+    materials.plasticity.ϕ .= [params_bg.ϕ , params_in.ϕ]
+    materials.plasticity.ηvp .= [params_bg.ηvp , params_in.ηvp]
+    materials.plasticity.ψ .= [params_bg.ψ , params_in.ψ]
+    preprocess!(materials)
+    # materials.ρ .= [params_bg. , params_in.]
 
     # Time steps and bulk strain intervals
     Δt0    = 1e5/sc.t
