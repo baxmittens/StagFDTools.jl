@@ -29,6 +29,24 @@ function InitialisePhaseRatios(markers, f)
     return phase_ratios, phase_weights
 end
 
+function InitialisePhaseRatios(phases::NamedTuple, nphases::Int)
+    c = [
+        let r = zeros(nphases)
+            r[phases.c[i, j]] = 1.0
+            r
+        end
+        for i in axes(phases.c, 1), j in axes(phases.c, 2)
+    ]
+    v = [
+        let r = zeros(nphases)
+            r[phases.v[i, j]] = 1.0
+            r
+        end
+        for i in axes(phases.v, 1), j in axes(phases.v, 2)
+    ]
+    return (c=c, v=v)
+end
+
 function MarkerWeight(xm, x, Δx)
     # Compute marker-grid distance and weight
     dst = abs(xm - x)

@@ -207,6 +207,8 @@ end
 
     # Intialise field
     L   = (x=1.0, y=0.7)
+    x   = (min=-L.x/2, max=L.x/2)
+    y   = (min=-L.y/2, max=L.y/2)
     Δ   = (x=L.x/nc.x, y=L.y/nc.y, t = Δt0)
 
     # Allocations
@@ -236,19 +238,11 @@ end
     𝐷_ctl   = (c = D_ctl_c, v = D_ctl_v)
 
     # Mesh coordinates
-    xv = LinRange(-L.x/2, L.x/2, nc.x+1)
-    yv = LinRange(-L.y/2, L.y/2, nc.y+1)
-    xve  = LinRange(-L.x/2-Δ.x, L.x/2+Δ.x, nc.x+3)
-    yve  = LinRange(-L.y/2-Δ.y, L.y/2+Δ.y, nc.y+3)
-    xc = LinRange(-L.x/2+Δ.x/2, L.x/2-Δ.x/2, nc.x)
-    yc = LinRange(-L.y/2+Δ.y/2, L.y/2-Δ.y/2, nc.y)
-    xce = LinRange(-L.x/2-Δ.x/2, L.x/2+Δ.x/2, nc.x+2)
-    yce = LinRange(-L.y/2-Δ.y/2, L.y/2+Δ.y/2, nc.y+2)
-    # phases  = (c= ones(Int64, size_c...), v= ones(Int64, size_v...))  # phase on velocity points
+    Grid = GenerateGrid(x,y,Δ,nc)
 
     # Initial velocity & pressure field
-    @views V.x[inx_Vx,iny_Vx] .= D_BC[1,1]*xv .+ D_BC[1,2]*yc' 
-    @views V.y[inx_Vy,iny_Vy] .= D_BC[2,1]*xc .+ D_BC[2,2]*yv'
+    @views V.x[inx_Vx,iny_Vx] .= D_BC[1,1]*Grid.v.x .+ D_BC[1,2]*Grid.c.x' 
+    @views V.y[inx_Vy,iny_Vy] .= D_BC[2,1]*Grid.c.x .+ D_BC[2,2]*Grid.v.y'
     @views Pt[inx_c, iny_c ]  .= 0.                 
     UpdateSolution!(V, Pt, dx, number, type, nc)
 
@@ -286,7 +280,7 @@ end
             @warn "Invalid phase_ratios.center at $I: sum = $s, values = $(phase_ratios.center[I])"
         end
     end
-    # Cut away ghost cells
+    # Cut ghost cells
     phase_info = (
         c   = phase_ratios.c[2:end-1,2:end-1],
         v   = phase_ratios.v[2:end-1,2:end-1],

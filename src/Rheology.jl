@@ -329,52 +329,7 @@ function PhaseAverage(a_average, averaging)
 end
 
 # Rheology ----------------------------------------------------
-function LocalRheology(ε̇, Dkk, P0, materials, phases::Integer, Δ)
-
-    eps0 = 0.0 * 1e-17
-
-    # Effective strain rate & pressure
-    ε̇II = sqrt.((ε̇[1]^2 + ε̇[2]^2 + (-ε̇[1] - ε̇[2])^2) / 2 + ε̇[3]^2) + eps0
-    P = ε̇[4]
-
-    # Parameters
-    ϵ = 1e-10 # tolerance
-    n = materials.n[phases]
-    η0 = materials.η0[phases]
-    B = materials.B[phases]
-    G = materials.G[phases]
-    β = materials.β[phases]
-    comp = materials.compressible
-
-    # Initial guess
-    η = (η0.*ε̇II .^ (1 ./ n.-1.0))[1]
-    ηvep = inv(1 / η + 1 / (G * Δ.t))
-    τII = 2 * ηvep * ε̇II
-
-    # Visco-elastic powerlaw
-    for it = 1:20
-        r = ε̇II - StrainRateTrial(τII, G, Δ.t, B, n)
-        # @show abs(r)
-        (abs(r) < ϵ) && break
-        ∂ε̇II∂τII = ad_derivative(StrainRateTrial, τII, G, Δ.t, B, n)
-        ∂τII∂ε̇II = inv(∂ε̇II∂τII)
-        τII += ∂τII∂ε̇II * r
-    end
-    isnan(τII) && error()
-
-    # ηvep for analytical solution
-    ηvep = τII / 2 / ε̇II
-
-    # Viscoplastic return mapping
-    τII, P, λ̇ = return_mapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, comp, materials.plasticity, phases)
-
-    # Effective viscosity
-    ηvep = τII / (2 * ε̇II)
-
-    return ηvep, λ̇, P, τII
-end
-
-function LocalRheology(ε̇, Dkk, P0, materials, phase_ratios::AbstractVector, Δ)
+function LocalRheology(ε̇, Dkk, P0, materials, phase_ratios, Δ)
 
     nphases = length(materials.n)
     phase_avg = materials.phase_avg

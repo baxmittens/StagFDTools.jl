@@ -117,7 +117,8 @@ end
     bulk_rate = D_BC[4]
 
     # Materials initialization
-    materials = initialize_materials(2; plasticity=DruckerPrager,compressible=true)
+    nphases = 2
+    materials = initialize_materials(nphases; plasticity=DruckerPrager,compressible=true)
     # Parameters
     params_bg = (ρ=1.0, n=1.0, η0=2e50, G=1.0, C=1.74e-4, ϕ=30., ηvp=2e3, β=0.5, ψ=10., ε̇=5e-11, rad=25e-4)
     params_in = (ρ=1.0, n=1.0, η0=2e50, G=0.25, C=1.74e-4, ϕ=30., ηvp=2e3, β=0.5, ψ=10.)
@@ -202,7 +203,10 @@ end
 
     # Intialise field
     L   = (x=1.0, y=0.7)
+    x   = (min=-L.x/2, max=L.x/2)
+    y   = (min=-L.y/2, max=L.y/2)
     Δ   = (x=L.x/nc.x, y=L.y/nc.y, t = Δt0)
+    Grid = GenerateGrid(x,y,Δ,nc)
 
     # Allocations
     R       = (x  = zeros(size_x...), y  = zeros(size_y...), p  = zeros(size_c...))
@@ -217,6 +221,7 @@ end
     εII     = zeros(nc.x, nc.y)
     G       = (c  = zeros(size_c...), v  = zeros(size_v...))
     β       = (c  = zeros(size_c...), v  = zeros(size_v...))
+    ρ       = (c  = zeros(size_c...), v  = zeros(size_v...))
 
     Pt      = zeros(size_c...)
     Pti     = zeros(size_c...)
@@ -229,21 +234,11 @@ end
     D_ctl_c =  [@MMatrix(zeros(4,4)) for _ in axes(ε̇.xx,1), _ in axes(ε̇.xx,2)]
     D_ctl_v =  [@MMatrix(zeros(4,4)) for _ in axes(ε̇.xy,1), _ in axes(ε̇.xy,2)]
     𝐷_ctl   = (c = D_ctl_c, v = D_ctl_v)
-
-    # Mesh coordinates
-    xv = LinRange(-L.x/2, L.x/2, nc.x+1)
-    yv = LinRange(-L.y/2, L.y/2, nc.y+1)
-    xve  = LinRange(-L.x/2-Δ.x, L.x/2+Δ.x, nc.x+3)
-    yve  = LinRange(-L.y/2-Δ.y, L.y/2+Δ.y, nc.y+3)
-    xc = LinRange(-L.x/2+Δ.x/2, L.x/2-Δ.x/2, nc.x)
-    yc = LinRange(-L.y/2+Δ.y/2, L.y/2-Δ.y/2, nc.y)
-    xce = LinRange(-L.x/2-Δ.x/2, L.x/2+Δ.x/2, nc.x+2)
-    yce = LinRange(-L.y/2-Δ.y/2, L.y/2+Δ.y/2, nc.y+2)
     phases  = (c= ones(Int64, size_c...), v= ones(Int64, size_v...))  # phase on velocity points
 
     # Initial velocity & pressure field
-    @views V.x[inx_Vx,iny_Vx] .= D_BC[1,1]*xv .+ D_BC[1,2]*yc' 
-    @views V.y[inx_Vy,iny_Vy] .= D_BC[2,1]*xc .+ D_BC[2,2]*yv'
+    @views V.x[inx_Vx,iny_Vx] .= D_BC[1,1]*Grid.v.x .+ D_BC[1,2]*Grid.c.x' 
+    @views V.y[inx_Vy,iny_Vy] .= D_BC[2,1]*Grid.c.x .+ D_BC[2,2]*Grid.v.y'
     @views Pt[inx_c, iny_c ]  .= 0.                 
     UpdateSolution!(V, Pt, dx, number, type, nc)
 
@@ -252,20 +247,20 @@ end
     @views begin
         BC.Vx[     2, iny_Vx] .= (type.Vx[     1, iny_Vx] .== :Neumann_normal) .* D_BC[1,1]
         BC.Vx[ end-1, iny_Vx] .= (type.Vx[   end, iny_Vx] .== :Neumann_normal) .* D_BC[1,1]
-        BC.Vx[inx_Vx,      2] .= (type.Vx[inx_Vx,      2] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx,     2] .== :Dirichlet_tangent) .* (D_BC[1,1]*xv .+ D_BC[1,2]*yv[1]  )
-        BC.Vx[inx_Vx,  end-1] .= (type.Vx[inx_Vx,  end-1] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx, end-1] .== :Dirichlet_tangent) .* (D_BC[1,1]*xv .+ D_BC[1,2]*yv[end])
+        BC.Vx[inx_Vx,      2] .= (type.Vx[inx_Vx,      2] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx,     2] .== :Dirichlet_tangent) .* (D_BC[1,1]*Grid.v.x .+ D_BC[1,2]*Grid.v.y[1]  )
+        BC.Vx[inx_Vx,  end-1] .= (type.Vx[inx_Vx,  end-1] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx, end-1] .== :Dirichlet_tangent) .* (D_BC[1,1]*Grid.v.y .+ D_BC[1,2]*Grid.v.y[end])
         BC.Vy[inx_Vy,     2 ] .= (type.Vy[inx_Vy,     1 ] .== :Neumann_normal) .* D_BC[2,2]
         BC.Vy[inx_Vy, end-1 ] .= (type.Vy[inx_Vy,   end ] .== :Neumann_normal) .* D_BC[2,2]
-        BC.Vy[     2, iny_Vy] .= (type.Vy[     2, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[    2, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*xv[1]   .+ D_BC[2,2]*yv)
-        BC.Vy[ end-1, iny_Vy] .= (type.Vy[ end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*xv[end] .+ D_BC[2,2]*yv)
+        BC.Vy[     2, iny_Vy] .= (type.Vy[     2, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[    2, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*Grid.v.x[1]   .+ D_BC[2,2]*Grid.v.y)
+        BC.Vy[ end-1, iny_Vy] .= (type.Vy[ end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*Grid.v.x[end] .+ D_BC[2,2]*Grid.v.y)
     end
 
     #------------------------------------------------------------------#
     # Material geometry
     ccord = (x=-L.x/2, y=-L.y/2)
-    @views phases.c[inx_c, iny_c][((xc.-ccord.x).^2 .+ ((yc').-ccord.y).^2) .<= (25e-4)] .= 2
-    @views phases.v[inx_v, iny_v][((xv.-ccord.x).^2 .+ ((yv').-ccord.y).^2) .<= (25e-4)] .= 2
-    phase_info = (c = phases.c, v = phases.v)
+    @views phases.c[inx_c, iny_c][((Grid.c.x .-ccord.x).^2 .+ ((Grid.c.y').-ccord.y).^2) .<= (25e-4)] .= 2
+    @views phases.v[inx_v, iny_v][((Grid.v.x .-ccord.x).^2 .+ ((Grid.v.y').-ccord.y).^2) .<= (25e-4)] .= 2
+    phase_ratios = InitialisePhaseRatios(phases, nphases)
 
     #------------------------------------------------------------------#
 
@@ -295,6 +290,8 @@ end
         τ0.xy .= τ.xy
         Pt0   .= Pt
 
+        compute_grid_fields!(G, β, ρ, materials, phase_ratios, nc, size_c, size_v, nphases)
+
         for iter=1:niter
 
             @printf("Iteration %04d\n", iter)
@@ -302,12 +299,12 @@ end
             #--------------------------------------------#
             # Residual check        
             @timeit to "Residual" begin
-                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phase_info, Δ)
+               TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
                 @show extrema(λ̇.c)
                 @show extrema(λ̇.v)
-                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phase_info, materials, number, type, BC, nc, Δ) 
-                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phase_info, materials, number, type, BC, nc, Δ)
-                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phase_info, materials, number, type, BC, nc, Δ)
+                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, materials, number, type, BC, nc, Δ) 
+                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
             end
 
             err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
@@ -325,9 +322,9 @@ end
             #--------------------------------------------#
             # Assembly
             @timeit to "Assembly" begin
-                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phase_info, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phase_info, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phase_info, materials, number, pattern, type, BC, nc, Δ)
+                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, ρ, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
             end
 
             #--------------------------------------------# 
@@ -348,9 +345,9 @@ end
 
             #--------------------------------------------#
             # Line search & solution update
-            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_info, nc, Δ)
+            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, ρ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_ratios, nc, Δ)
             UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
-            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phase_info, Δ)
+            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
 
         end
 
@@ -370,11 +367,11 @@ end
         #--------------------------------------------#
         # Plot fields
         if flag.fields
-            z1 = heatmap(xv, yc, (V.x[inx_Vx,iny_Vx]').*1e7./sc.t, aspect_ratio=1, xlim=extrema(xc), title="Vx [10⁻⁶]")
-            z2 = heatmap(xc, yc,  (Pt[inx_c,iny_c]').*sc.σ, aspect_ratio=1, xlim=extrema(xc), title="Pt")
+            z1 = heatmap(Grid.v.x, Grid.c.y, (V.x[inx_Vx,iny_Vx]').*1e7./sc.t, aspect_ratio=1, xlim=extrema(Grid.c.x), title="Vx [10⁻⁶]")
+            z2 = heatmap(Grid.c.x, Grid.c.y,  (Pt[inx_c,iny_c]').*sc.σ, aspect_ratio=1, xlim=extrema(Grid.c.x), title="Pt")
             # z3 = heatmap(xc, yc,  log10.((ε̇II)'./sc.t), aspect_ratio=1, xlim=extrema(xc), title="ε̇II", c=:coolwarm)
-            z3 = heatmap(xc, yc,  log10.(εII)', aspect_ratio=1, xlim=extrema(xc), title="εII", c=:coolwarm)
-            z4 = heatmap(xc, yc,  ((τII').*sc.σ)*1e4, aspect_ratio=1, xlim=extrema(xc), title="τII e-4", c=:turbo)
+            z3 = heatmap(Grid.c.x, Grid.c.y,  log10.(εII)', aspect_ratio=1, xlim=extrema(Grid.c.x), title="εII", c=:coolwarm)
+            z4 = heatmap(Grid.c.x, Grid.c.y,  ((τII').*sc.σ)*1e4, aspect_ratio=1, xlim=extrema(Grid.c.x), title="τII e-4", c=:turbo)
             if flag.Matlab && m !== nothing
                 # z3m = heatmap(m.xc, m.yc, log10.((m.ε̇II)'./sc.t, aspect_ratio=1, xlim=extrema(m.xc), title="ε̇II from M2Di", c=:coolwarm)
                 z3m = heatmap(m.xc, m.yc, log10.(m.εII)', aspect_ratio=1, xlim=extrema(m.xc), title="εII from M2Di", c=:coolwarm)
