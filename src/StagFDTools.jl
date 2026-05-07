@@ -40,7 +40,6 @@ using StaticArrays, StagFDTools, LinearAlgebra
 include("Rheology.jl")
 export LocalRheology, StressVector!
 export LocalRheology_div, StressVector_div!
-export LocalRheology_phase_ratios, StressVector_phase_ratios!
 export Yield, Potential
 end
 

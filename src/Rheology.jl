@@ -329,7 +329,7 @@ function PhaseAverage(a_average, averaging)
 end
 
 # Rheology ----------------------------------------------------
-function LocalRheology(ε̇, Dkk, P0, materials, phases, Δ)
+function LocalRheology(ε̇, Dkk, P0, materials, phases::Integer, Δ)
 
     eps0 = 0.0 * 1e-17
 
@@ -371,52 +371,7 @@ function LocalRheology(ε̇, Dkk, P0, materials, phases, Δ)
     return ηvep, λ̇, P, τII
 end
 
-function LocalRheology_div(ε̇, Dkk, P0, materials, phases, Δ)
-
-    eps0 = 0.0 * 1e-17
-
-    error()
-
-    # Effective strain rate & pressure
-    ε̇II = sqrt.((ε̇[1]^2 + ε̇[2]^2 + (-ε̇[1] - ε̇[2])^2) / 2 + ε̇[3]^2) + eps0
-    Dkk = ε̇[4]
-
-    # Parameters
-    ϵ = 1e-10 # tolerance
-    n = materials.n[phases]
-    η0 = materials.η0[phases]
-    B = materials.B[phases]
-    G = materials.G[phases]
-    β = materials.β[phases]
-    comp = materials.compressible
-
-    # Initial guess
-    η = (η0.*ε̇II .^ (1 ./ n.-1.0))[1]
-    ηvep = inv(1 / η + 1 / (G * Δ.t))
-    τII = 2 * ηvep * ε̇II
-    P = P0 - comp * Δ.t / β * Dkk
-
-    # Visco-elastic powerlaw
-    for it = 1:20
-        r = ε̇II - StrainRateTrial(τII, G, Δ.t, B, n)
-        # @show abs(r)
-        (abs(r) < ϵ) && break
-        ∂ε̇II∂τII = ad_derivative(StrainRateTrial, τII, G, Δ.t, B, n)
-        ∂τII∂ε̇II = inv(∂ε̇II∂τII)
-        τII += ∂τII∂ε̇II * r
-    end
-    isnan(τII) && error()
-
-    # Viscoplastic return mapping
-    τII, P, λ̇ = return_mapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, comp, materials.plasticity, phases)
-
-    # Effective viscosity
-    ηvep = τII / (2 * ε̇II)
-
-    return ηvep, λ̇, P, τII
-end
-
-function LocalRheology_phase_ratios(ε̇, Dkk, P0, materials, phase_ratios, Δ)
+function LocalRheology(ε̇, Dkk, P0, materials, phase_ratios::AbstractVector, Δ)
 
     nphases = length(materials.n)
     phase_avg = materials.phase_avg
@@ -477,9 +432,63 @@ function LocalRheology_phase_ratios(ε̇, Dkk, P0, materials, phase_ratios, Δ)
     return η_average, λ̇_average, P_average, τ_average
 end
 
+function LocalRheology_div(ε̇, Dkk, P0, materials, phases, Δ)
+
+    eps0 = 0.0 * 1e-17
+
+    error()
+
+    # Effective strain rate & pressure
+    ε̇II = sqrt.((ε̇[1]^2 + ε̇[2]^2 + (-ε̇[1] - ε̇[2])^2) / 2 + ε̇[3]^2) + eps0
+    Dkk = ε̇[4]
+
+    # Parameters
+    ϵ = 1e-10 # tolerance
+    n = materials.n[phases]
+    η0 = materials.η0[phases]
+    B = materials.B[phases]
+    G = materials.G[phases]
+    β = materials.β[phases]
+    comp = materials.compressible
+
+    # Initial guess
+    η = (η0.*ε̇II .^ (1 ./ n.-1.0))[1]
+    ηvep = inv(1 / η + 1 / (G * Δ.t))
+    τII = 2 * ηvep * ε̇II
+    P = P0 - comp * Δ.t / β * Dkk
+
+    # Visco-elastic powerlaw
+    for it = 1:20
+        r = ε̇II - StrainRateTrial(τII, G, Δ.t, B, n)
+        # @show abs(r)
+        (abs(r) < ϵ) && break
+        ∂ε̇II∂τII = ad_derivative(StrainRateTrial, τII, G, Δ.t, B, n)
+        ∂τII∂ε̇II = inv(∂ε̇II∂τII)
+        τII += ∂τII∂ε̇II * r
+    end
+    isnan(τII) && error()
+
+    # Viscoplastic return mapping
+    τII, P, λ̇ = return_mapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, comp, materials.plasticity, phases)
+
+    # Effective viscosity
+    ηvep = τII / (2 * ε̇II)
+
+    return ηvep, λ̇, P, τII
+end
+
 # Stress Vector ----------------------------------------------
-function StressVector!(ε̇, Dkk, P0, materials, phases, Δ)
+function StressVector!(ε̇, Dkk, P0, materials, phases::Integer, Δ)
     η, λ̇, P, τII = LocalRheology(ε̇, Dkk, P0, materials, phases, Δ)
+    τ = @SVector([2 * η * ε̇[1],
+        2 * η * ε̇[2],
+        2 * η * ε̇[3],
+        P])
+    return τ, η, λ̇, τII
+end
+
+function StressVector!(ε̇, Dkk, P0, materials, phase_ratios::AbstractVector, Δ)
+    η, λ̇, P, τII = LocalRheology(ε̇, Dkk, P0, materials, phase_ratios, Δ)
     τ = @SVector([2 * η * ε̇[1],
         2 * η * ε̇[2],
         2 * η * ε̇[3],
@@ -496,11 +505,5 @@ function StressVector_div!(ε̇, Dkk, P0, materials, phases, Δ)
     return τ, η, λ̇, τII
 end
 
-function StressVector_phase_ratios!(ε̇, Dkk, P0, materials, phase_ratios, Δ)
-    η, λ̇, P, τII = LocalRheology_phase_ratios(ε̇, Dkk, P0, materials, phase_ratios, Δ)
-    τ = @SVector([2 * η * ε̇[1],
-        2 * η * ε̇[2],
-        2 * η * ε̇[3],
-        P])
-    return τ, η, λ̇, τII
-end
+LocalRheology_phase_ratios(args...) = LocalRheology(args...)
+StressVector_phase_ratios!(args...) = StressVector!(args...)

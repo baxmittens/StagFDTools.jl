@@ -1,7 +1,7 @@
 #---------------------------------------------------------------------------------------
 # Compute deformation field with VEVP rheology and benchmark with M2Di code from Duretz et al., 2018
 #---------------------------------------------------------------------------------------
-using StagFDTools, StagFDTools.Stokes, StagFDTools.Rheology, ExtendableSparse, StaticArrays, Plots, LinearAlgebra, SparseArrays, Printf
+using StagFDTools, StagFDTools.StokesJustPIC, StagFDTools.Rheology, ExtendableSparse, StaticArrays, Plots, LinearAlgebra, SparseArrays, Printf
 import Statistics:mean
 using DifferentiationInterface
 using TimerOutputs
@@ -106,6 +106,10 @@ end
 @views function main(nc, flag, res)
     #--------------------------------------------#
 
+    # Markers
+    nmpc = (x = 4, y = 4)
+    noise = true
+
     # Scaling
     sc = (σ = 1, L = 1, t = 1)
 
@@ -120,7 +124,7 @@ end
     materials = initialize_materials(2; plasticity=DruckerPrager,compressible=true)
     # Parameters
     params_bg = (ρ=1.0, n=1.0, η0=2e50, G=1.0, C=1.74e-4, ϕ=30., ηvp=2e3, β=0.5, ψ=10., ε̇=5e-11, rad=25e-4)
-    params_in = (ρ=1.0, n=1.0, η0=2e50, G=0.25, C=1.74e-4, ϕ=30., ηvp=2e3, β=0.5, ψ=10.)
+    params_in = (ρ=1.0, n=1.0, η0=2e40, G=0.25, C=1.74e-4, ϕ=30., ηvp=2e3, β=0.5, ψ=10.)
 
     materials.g .= [0. , 0.]
     materials.ρ .= [params_bg.ρ , params_in.ρ]
@@ -137,7 +141,7 @@ end
 
     # Time steps and bulk strain intervals
     Δt0    = 1e5/sc.t
-    nt     = 100
+    nt     = 40
     if flag.strain_int
         ε_bulk = LinRange(1e-4,3e-4,5)
         d = 1
@@ -210,7 +214,6 @@ end
     Vi      = (x  = zeros(size_x...), y  = zeros(size_y...))
     η       = (c  =  ones(size_c...), v  =  ones(size_v...) )
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
-    ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
     ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
     τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
     τ       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
@@ -239,7 +242,7 @@ end
     yc = LinRange(-L.y/2+Δ.y/2, L.y/2-Δ.y/2, nc.y)
     xce = LinRange(-L.x/2-Δ.x/2, L.x/2+Δ.x/2, nc.x+2)
     yce = LinRange(-L.y/2-Δ.y/2, L.y/2+Δ.y/2, nc.y+2)
-    phases  = (c= ones(Int64, size_c...), v= ones(Int64, size_v...))  # phase on velocity points
+    # phases  = (c= ones(Int64, size_c...), v= ones(Int64, size_v...))  # phase on velocity points
 
     # Initial velocity & pressure field
     @views V.x[inx_Vx,iny_Vx] .= D_BC[1,1]*xv .+ D_BC[1,2]*yc' 
@@ -261,11 +264,31 @@ end
     end
 
     #------------------------------------------------------------------#
-    # Material geometry
+    # Markers 
+
+    # Initialise marker field
+    m = InitialiseParticleField(nc, nmpc, L, Δ, materials, noise)
+    phase_ratios, phase_weights = InitialisePhaseRatios(m, ε̇)
+    mphase = ones(Int64,m.num...)
+
+    # Set material geometry: circle
     ccord = (x=-L.x/2, y=-L.y/2)
-    @views phases.c[inx_c, iny_c][((xc.-ccord.x).^2 .+ ((yc').-ccord.y).^2) .<= (25e-4)] .= 2
-    @views phases.v[inx_v, iny_v][((xv.-ccord.x).^2 .+ ((yv').-ccord.y).^2) .<= (25e-4)] .= 2
-    phase_info = (c = phases.c, v = phases.v)
+    mphase[((m.Xm .- ccord.x).^2 .+ (m.Ym .- ccord.y).^2) .<= (25e-4)] .= 2
+
+    # Set phase ratios
+    PhaseRatios!(phase_ratios, phase_weights, m, mphase, xce, yce, xve, yve, Δ)
+    # check 
+    for I in CartesianIndices(phase_ratios.c)
+        s = sum(phase_ratios.c[I])
+        if !(s ≈ 1.0)
+            @warn "Invalid phase_ratios.center at $I: sum = $s, values = $(phase_ratios.center[I])"
+        end
+    end
+    # Cut away ghost cells
+    phase_info = (
+        c   = phase_ratios.c[2:end-1,2:end-1],
+        v   = phase_ratios.v[2:end-1,2:end-1],
+    )
 
     #------------------------------------------------------------------#
 
@@ -295,6 +318,9 @@ end
         τ0.xy .= τ.xy
         Pt0   .= Pt
 
+        # Compute bulk and shear moduli
+        compute_shear_bulk_moduli!(G, β, materials, phase_info, nc, size_c, size_v, m.nphases)
+
         for iter=1:niter
 
             @printf("Iteration %04d\n", iter)
@@ -302,12 +328,12 @@ end
             #--------------------------------------------#
             # Residual check        
             @timeit to "Residual" begin
-                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phase_info, Δ)
+                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, β, V, Pt, Pt0, ΔPt, type, BC, materials, phase_info, Δ)
                 @show extrema(λ̇.c)
                 @show extrema(λ̇.v)
-                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phase_info, materials, number, type, BC, nc, Δ) 
-                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phase_info, materials, number, type, BC, nc, Δ)
-                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phase_info, materials, number, type, BC, nc, Δ)
+                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, materials, number, type, BC, nc, Δ) 
+                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
             end
 
             err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
@@ -325,9 +351,9 @@ end
             #--------------------------------------------#
             # Assembly
             @timeit to "Assembly" begin
-                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phase_info, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phase_info, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phase_info, materials, number, pattern, type, BC, nc, Δ)
+                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
             end
 
             #--------------------------------------------# 
@@ -348,9 +374,9 @@ end
 
             #--------------------------------------------#
             # Line search & solution update
-            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_info, nc, Δ)
+            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_info, nc, Δ)
             UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
-            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phase_info, Δ)
+            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, β, V, Pt, Pt0, ΔPt, type, BC, materials, phase_info, Δ)
 
         end
 
@@ -446,7 +472,7 @@ let
     for i in eachindex(resolution)
 
         res = resolution[i]
-        flag = (strain_evo=false, Matlab=false, fields=true, strain_int=false )
+        flag = (strain_evo=true, Matlab=false, fields=true, strain_int=true )
 
         (ε_prof, C, m_ε_prof, m_C) = main((x = res, y = res), flag, res)
         # plot!(z5,C[2,:],(ε_prof)*1e3, label="$(res)²")
