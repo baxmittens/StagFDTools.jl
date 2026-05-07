@@ -56,21 +56,9 @@ export Continuity, SMomentum_x_Generic, SMomentum_y_Generic
 export ResidualContinuity2D!, ResidualMomentum2D_x!, ResidualMomentum2D_y!
 export AssembleContinuity2D!, AssembleMomentum2D_x!, AssembleMomentum2D_y!
 export TangentOperator!, LineSearch!
-end
-module StokesJustPIC
-using LinearAlgebra, StaticArrays, ExtendableSparse, StaticArrays, StagFDTools, StagFDTools.Rheology
-using JustPIC, JustPIC._2D
-import JustPIC.@index
-include("StokesJustPIC.jl")
-export Fields, Ranges, Numbering!, SparsityPattern!, SetRHS!, UpdateSolution!, SetBCVx!, SetBCVy!, set_boundaries_template!, SetBCVx1, SetBCVy1
-export Continuity, SMomentum_x_Generic, SMomentum_y_Generic
-export ResidualContinuity2D!, ResidualMomentum2D_x!, ResidualMomentum2D_y!
-export AssembleContinuity2D!, AssembleMomentum2D_x!, AssembleMomentum2D_y!
-export TangentOperator!, LineSearch!
 include("Particles.jl")
-export InitialiseParticleField, InitialisePhaseRatios, PhaseRatios!, compute_shear_bulk_moduli!
+export InitialiseParticleField, InitialisePhaseRatios, PhaseRatios!, compute_grid_fields!
 end
-
 module StokesDeformed
 using LinearAlgebra, StaticArrays, ExtendableSparse, StaticArrays, StagFDTools, StagFDTools.Rheology
 include("StokesDeformed.jl")

@@ -1,7 +1,7 @@
 #---------------------------------------------------------------------------------------
 # Compute deformation field with VEVP rheology and benchmark with M2Di code from Duretz et al., 2018
 #---------------------------------------------------------------------------------------
-using StagFDTools, StagFDTools.StokesJustPIC, StagFDTools.Rheology, ExtendableSparse, StaticArrays, Plots, LinearAlgebra, SparseArrays, Printf
+using StagFDTools, StagFDTools.Stokes, StagFDTools.Rheology, ExtendableSparse, StaticArrays, Plots, LinearAlgebra, SparseArrays, Printf
 import Statistics:mean
 using DifferentiationInterface
 using TimerOutputs
@@ -122,6 +122,7 @@ end
 
     # Materials initialization
     materials = initialize_materials(2; plasticity=DruckerPrager,compressible=true)
+    
     # Parameters
     params_bg = (ρ=1.0, n=1.0, η0=2e50, G=1.0, C=1.74e-4, ϕ=30., ηvp=2e3, β=0.5, ψ=10., ε̇=5e-11, rad=25e-4)
     params_in = (ρ=1.0, n=1.0, η0=2e40, G=0.25, C=1.74e-4, ϕ=30., ηvp=2e3, β=0.5, ψ=10.)
@@ -136,8 +137,8 @@ end
     materials.plasticity.ϕ .= [params_bg.ϕ , params_in.ϕ]
     materials.plasticity.ηvp .= [params_bg.ηvp , params_in.ηvp]
     materials.plasticity.ψ .= [params_bg.ψ , params_in.ψ]
+
     preprocess!(materials)
-    # materials.ρ .= [params_bg. , params_in.]
 
     # Time steps and bulk strain intervals
     Δt0    = 1e5/sc.t
@@ -148,7 +149,7 @@ end
     end
 
     # Newton solver
-    niter = 2
+    niter = 10
     ϵ_nl  = 1e-10
     α     = LinRange(0.05, 1.0, 10)
 
@@ -220,6 +221,7 @@ end
     εII     = zeros(nc.x, nc.y)
     G       = (c  = zeros(size_c...), v  = zeros(size_v...))
     β       = (c  = zeros(size_c...), v  = zeros(size_v...))
+    ρ       = (c  = zeros(size_c...), v  = zeros(size_v...))
 
     Pt      = zeros(size_c...)
     Pti     = zeros(size_c...)
@@ -319,7 +321,7 @@ end
         Pt0   .= Pt
 
         # Compute bulk and shear moduli
-        compute_shear_bulk_moduli!(G, β, materials, phase_info, nc, size_c, size_v, m.nphases)
+        compute_grid_fields!(G, β, ρ, materials, phase_info, nc, size_c, size_v, m.nphases)
 
         for iter=1:niter
 
@@ -328,12 +330,12 @@ end
             #--------------------------------------------#
             # Residual check        
             @timeit to "Residual" begin
-                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, β, V, Pt, Pt0, ΔPt, type, BC, materials, phase_info, Δ)
+                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_info, Δ)
                 @show extrema(λ̇.c)
                 @show extrema(λ̇.v)
                 ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, materials, number, type, BC, nc, Δ) 
                 ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
-                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
             end
 
             err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
@@ -353,7 +355,7 @@ end
             @timeit to "Assembly" begin
                 AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, materials, number, pattern, type, BC, nc, Δ)
                 AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, ρ, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
             end
 
             #--------------------------------------------# 
@@ -374,9 +376,9 @@ end
 
             #--------------------------------------------#
             # Line search & solution update
-            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_info, nc, Δ)
+            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, ρ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_info, nc, Δ)
             UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
-            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, β, V, Pt, Pt0, ΔPt, type, BC, materials, phase_info, Δ)
+            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_info, Δ)
 
         end
 

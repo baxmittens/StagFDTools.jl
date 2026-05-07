@@ -144,7 +144,7 @@ end
     end
 
     # Newton solver
-    niter = 2
+    niter = 10
     ϵ_nl  = 1e-10
     α     = LinRange(0.05, 1.0, 10)
 

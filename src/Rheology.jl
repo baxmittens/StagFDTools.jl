@@ -362,6 +362,9 @@ function LocalRheology(ε̇, Dkk, P0, materials, phases::Integer, Δ)
     end
     isnan(τII) && error()
 
+    # ηvep for analytical solution
+    ηvep = τII / 2 / ε̇II
+
     # Viscoplastic return mapping
     τII, P, λ̇ = return_mapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, comp, materials.plasticity, phases)
 
@@ -410,6 +413,9 @@ function LocalRheology(ε̇, Dkk, P0, materials, phase_ratios::AbstractVector, �
             τII += ∂τII∂ε̇II * r
         end
         isnan(τII) && error()
+
+        # ηvep for analytical solution
+        ηvep = τII / 2 / ε̇II
 
         # Viscoplastic return mapping
         τII, P, λ̇ = return_mapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, comp, materials.plasticity, phases)
@@ -467,6 +473,9 @@ function LocalRheology_div(ε̇, Dkk, P0, materials, phases, Δ)
         τII += ∂τII∂ε̇II * r
     end
     isnan(τII) && error()
+
+    # ηvep for analytical solution
+    ηvep = τII / 2 / ε̇II
 
     # Viscoplastic return mapping
     τII, P, λ̇ = return_mapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, comp, materials.plasticity, phases)

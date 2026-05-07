@@ -74,19 +74,21 @@ function PhaseRatios!(phase_ratios, phase_weights, m, mphase, xce, yce, xve, yve
     end
 end
 
-function compute_shear_bulk_moduli!(G, β, materials, phase_ratios, nc, size_c, size_v, nphases)
+function compute_grid_fields!(G, β, ρ, materials, phase_ratios, nc, size_c, size_v, nphases)
     sum = (c=ones(size_c...), v=ones(size_v...))
 
     for I in CartesianIndices(β.c)
         i, j = I[1], I[2]
         β.c[i, j] = 0.0
         G.c[i, j] = 0.0
+        ρ.c[i, j] = 0.0
         sum.c[i, j] = 0.0
         for p = 1:nphases # loop on phases
             if i > 1 && j > 1 && i < nc.x + 2 && j < nc.y + 2
                 phase_ratio = phase_ratios.c[i-1, j-1][p]
                 β.c[i, j] += phase_ratio * materials.β[p]
                 G.c[i, j] += phase_ratio * materials.G[p]
+                ρ.c[i, j] += phase_ratio * materials.ρ[p]
                 sum.c[i, j] += phase_ratio
             end
         end
