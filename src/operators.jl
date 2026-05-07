@@ -19,10 +19,10 @@ end
 # Ideally it's 2 when working on momentum balance
 # But it's one (or scalar) when computing local rheology. 
 @inline function deviatoric_strain_rate(Dxx, Dxy, Dyx, Dyy)
-    ε̇kk = SVector{2, Float64}( @. Dxx + Dyy           )
-    ε̇xx = SVector{2, Float64}( @. Dxx - 1/3*ε̇kk       ) 
-    ε̇yy = SVector{2, Float64}( @. Dyy - 1/3*ε̇kk       ) 
-    ε̇xy = SVector{2, Float64}( @. 1/2 * ( Dxy + Dyx ) ) 
+    ε̇kk = SVector{2}( @. Dxx + Dyy           )
+    ε̇xx = SVector{2}( @. Dxx - 1/3*ε̇kk       ) 
+    ε̇yy = SVector{2}( @. Dyy - 1/3*ε̇kk       ) 
+    ε̇xy = SVector{2}( @. 1/2 * ( Dxy + Dyx ) ) 
     return ε̇xx, ε̇yy, ε̇xy, ε̇kk
 end
 
@@ -49,13 +49,13 @@ end
     return ε̇xx, ε̇yy, ε̇xy, ε̇kk
 end
 
-@inline function effective_strain_rate(ε̇xx::SVector{N,T},
-                                       ε̇yy::SVector{N,T},
-                                       ε̇xy::SVector{N,T},
-                                       τ0xx::SVector{N,T},
-                                       τ0yy::SVector{N,T},
-                                       τ0xy::SVector{N,T},
-                                       _2GΔt) where {N,T}
+@inline function effective_strain_rate(ε̇xx::SVector{N},
+                                       ε̇yy::SVector{N},
+                                       ε̇xy::SVector{N},
+                                       τ0xx::SVector{N},
+                                       τ0yy::SVector{N},
+                                       τ0xy::SVector{N},
+                                       _2GΔt) where {N}
     return (
         ε̇xx .+ τ0xx .* _2GΔt,
         ε̇yy .+ τ0yy .* _2GΔt,

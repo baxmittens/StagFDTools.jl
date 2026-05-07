@@ -163,39 +163,39 @@ function SMomentum_x_Generic(Vx_loc, Vy_loc, Pt, ΔP, τ0, 𝐷, phases, materia
     Vy = SetBCVy1(Vy_loc, type.y, bcv.y, Δ)
 
     # Interp Vy -> Vx, Vx - > Vy
-    V̄y = SMatrix{3, 3, Float64}( av2D(Vy) )
-    V̄x = SMatrix{2, 2, Float64}( av2D(Vx) )
+    V̄y = SMatrix{3, 3}( av2D(Vy) )
+    V̄x = SMatrix{2, 2}( av2D(Vx) )
 
     # More averages
-    Pt_v   = SVector{2, Float64}( av(Pt)    )
-    τ0xx_c = SVector{2, Float64}( τ0.xx[:,2:end-1])
-    τ0yy_c = SVector{2, Float64}( τ0.yy[:,2:end-1])
-    τ0xy_c = SVector{2, Float64}( av(τ0.xy) )
-    τ0xx_v = SVector{2, Float64}( av(τ0.xx) )
-    τ0yy_v = SVector{2, Float64}( av(τ0.yy) )
-    τ0xy_v = SVector{2, Float64}( τ0.xy[2:end-1,:][:] )
+    Pt_v   = SVector{2}( av(Pt)    )
+    τ0xx_c = SVector{2}( τ0.xx[:,2:end-1])
+    τ0yy_c = SVector{2}( τ0.yy[:,2:end-1])
+    τ0xy_c = SVector{2}( av(τ0.xy) )
+    τ0xx_v = SVector{2}( av(τ0.xx) )
+    τ0yy_v = SVector{2}( av(τ0.yy) )
+    τ0xy_v = SVector{2}( τ0.xy[2:end-1,:][:] )
 
     # Velocity gradient - centroids
-    Dxx_c = SVector{2, Float64}( (∂x(Vx) * invΔx)[:,2:end-1]       )
-    Dxy_c = SVector{2, Float64}( (∂y(V̄x) * invΔy)                  )
-    Dyy_c = SVector{2, Float64}( (∂y(Vy) * invΔy)[2:end-1,2:end-1] )
-    Dyx_c = SVector{2, Float64}( (∂x(V̄y) * invΔx)[:,2:end-1]       ) 
+    Dxx_c = SVector{2}( (∂x(Vx) * invΔx)[:,2:end-1]       )
+    Dxy_c = SVector{2}( (∂y(V̄x) * invΔy)                  )
+    Dyy_c = SVector{2}( (∂y(Vy) * invΔy)[2:end-1,2:end-1] )
+    Dyx_c = SVector{2}( (∂x(V̄y) * invΔx)[:,2:end-1]       ) 
 
     # Velocity gradient - vertices
-    Dxx_v = SVector{2, Float64}( (∂x(V̄x) * invΔx)                  ) 
-    Dxy_v = SVector{2, Float64}( (∂y(Vx) * invΔy)[2:end-1,:]       )  
-    Dyy_v = SVector{2, Float64}( (∂y(V̄y) * invΔy)[2:end-1,:]       )  
-    Dyx_v = SVector{2, Float64}( (∂x(Vy) * invΔx)[2:end-1,2:end-1] )   
+    Dxx_v = SVector{2}( (∂x(V̄x) * invΔx)                  ) 
+    Dxy_v = SVector{2}( (∂y(Vx) * invΔy)[2:end-1,:]       )  
+    Dyy_v = SVector{2}( (∂y(V̄y) * invΔy)[2:end-1,:]       )  
+    Dyx_v = SVector{2}( (∂x(Vy) * invΔx)[2:end-1,2:end-1] )   
 
     # Deviatoric strain rate
     ε̇xx_c, ε̇yy_c, ε̇xy_c, ε̇kk_c = deviatoric_strain_rate(Dxx_c, Dxy_c, Dyx_c, Dyy_c)
     ε̇xx_v, ε̇yy_v, ε̇xy_v, ε̇kk_v = deviatoric_strain_rate(Dxx_v, Dxy_v, Dyx_v, Dyy_v)
 
     # Effective visco-elastic strain rate
-    Gc      = SVector{2, Float64}( materials.G[phases.c[i]] for i=1:2)
-    Gv      = SVector{2, Float64}( materials.G[phases.v[i]] for i=1:2)
-    _2GΔt_c = SVector{2, Float64}( @. inv(2 * Gc * Δ.t))
-    _2GΔt_v = SVector{2, Float64}( @. inv(2 * Gv * Δ.t))
+    Gc      = SVector{2}( materials.G[phases.c[i]] for i=1:2)
+    Gv      = SVector{2}( materials.G[phases.v[i]] for i=1:2)
+    _2GΔt_c = SVector{2}( @. inv(2 * Gc * Δ.t))
+    _2GΔt_v = SVector{2}( @. inv(2 * Gv * Δ.t))
     ϵ̇xx_c, ϵ̇yy_c, ϵ̇xy_c = effective_strain_rate(ε̇xx_c, ε̇yy_c, ε̇xy_c, τ0xx_c, τ0yy_c, τ0xy_c, _2GΔt_c)
     ϵ̇xx_v, ϵ̇yy_v, ϵ̇xy_v = effective_strain_rate(ε̇xx_v, ε̇yy_v, ε̇xy_v, τ0xx_v, τ0yy_v, τ0xy_v, _2GΔt_v)
 
@@ -204,20 +204,12 @@ function SMomentum_x_Generic(Vx_loc, Vy_loc, Pt, ΔP, τ0, 𝐷, phases, materia
     Ptc  = SVector{2}( @. Pt[:,2] + comp * ΔP[:] )
 
     # Stress
-    Tstress = promote_type(eltype(Vx_loc), eltype(Vy_loc), eltype(Pt), eltype(Ptc))
-    σxx = MVector{2, Tstress}(undef)
-    τxy = MVector{2, Tstress}(undef)
-    for i=1:2
-        σxx[i] = (𝐷.c[i][1,1] - 𝐷.c[i][4,1]) * ϵ̇xx_c[i] + (𝐷.c[i][1,2] - 𝐷.c[i][4,2]) * ϵ̇yy_c[i] + (𝐷.c[i][1,3] - 𝐷.c[i][4,3]) * ϵ̇xy_c[i] + (𝐷.c[i][1,4] - (𝐷.c[i][4,4] - 1)) * Pt[i,2]  - Ptc[i]
-        τxy[i] = 𝐷.v[i][3,1]                 * ϵ̇xx_v[i] + 𝐷.v[i][3,2]                 * ϵ̇yy_v[i] + 𝐷.v[i][3,3]                  * ϵ̇xy_v[i] + 𝐷.v[i][3,4]                       * Pt_v[i]
-    end
-
-    # σxx = SVector{2, Float64}(
-    #     (𝐷.c[i][1,1] - 𝐷.c[i][4,1]) * ϵ̇xx_c[i] + (𝐷.c[i][1,2] - 𝐷.c[i][4,2]) * ϵ̇yy_c[i] + (𝐷.c[i][1,3] - 𝐷.c[i][4,3]) * ϵ̇xy_c[i] + (𝐷.c[i][1,4] - (𝐷.c[i][4,4] - 1)) * Pt[i,2]  - Ptc[i]   for i=1:2
-    # )
-    # τxy = SVector{2, Float64}(
-    #     𝐷.v[i][3,1]                 * ϵ̇xx_v[i] + 𝐷.v[i][3,2]                 * ϵ̇yy_v[i] + 𝐷.v[i][3,3]                  * ϵ̇xy_v[i] + 𝐷.v[i][3,4]                       * Pt_v[i]  for i=1:2
-    # )
+    σxx = SVector{2}(
+        (𝐷.c[i][1,1] - 𝐷.c[i][4,1]) * ϵ̇xx_c[i] + (𝐷.c[i][1,2] - 𝐷.c[i][4,2]) * ϵ̇yy_c[i] + (𝐷.c[i][1,3] - 𝐷.c[i][4,3]) * ϵ̇xy_c[i] + (𝐷.c[i][1,4] - (𝐷.c[i][4,4] - 1)) * Pt[i,2]  - Ptc[i]   for i=1:2
+    )
+    τxy = SVector{2}(
+        𝐷.v[i][3,1]                 * ϵ̇xx_v[i] + 𝐷.v[i][3,2]                 * ϵ̇yy_v[i] + 𝐷.v[i][3,3]                  * ϵ̇xy_v[i] + 𝐷.v[i][3,4]                       * Pt_v[i]  for i=1:2
+    )
 
     # Residual
     fx  = ( σxx[2]  - σxx[1] ) * invΔx
@@ -236,39 +228,39 @@ function SMomentum_y_Generic(Vx_loc, Vy_loc, Pt, ΔP, τ0, 𝐷, phases, materia
     Vy = SetBCVy1(Vy_loc, type.y, bcv.y, Δ)
 
     # Interp Vy -> Vx, Vx - > Vy
-    V̄y = SMatrix{2, 2, Float64}( av2D(Vy) )   # 2, 2
-    V̄x = SMatrix{3, 3, Float64}( av2D(Vx) )   # 3, 3
+    V̄y = SMatrix{2, 2}( av2D(Vy) )   # 2, 2
+    V̄x = SMatrix{3, 3}( av2D(Vx) )   # 3, 3
 
     # More averages
-    Pt_v   = SVector{2, Float64}( av(Pt)    )
-    τ0xx_c = SVector{2, Float64}( τ0.xx[2:end-1,:])
-    τ0yy_c = SVector{2, Float64}( τ0.yy[2:end-1,:])
-    τ0xy_c = SVector{2, Float64}( av(τ0.xy) )
-    τ0xx_v = SVector{2, Float64}( av(τ0.xx) )
-    τ0yy_v = SVector{2, Float64}( av(τ0.yy) )
-    τ0xy_v = SVector{2, Float64}( τ0.xy[:,2:end-1][:] )
+    Pt_v   = SVector{2}( av(Pt)    )
+    τ0xx_c = SVector{2}( τ0.xx[2:end-1,:])
+    τ0yy_c = SVector{2}( τ0.yy[2:end-1,:])
+    τ0xy_c = SVector{2}( av(τ0.xy) )
+    τ0xx_v = SVector{2}( av(τ0.xx) )
+    τ0yy_v = SVector{2}( av(τ0.yy) )
+    τ0xy_v = SVector{2}( τ0.xy[:,2:end-1][:] )
 
     # Velocity gradient - centroids
-    Dxx_c = SVector{2, Float64}( (∂x(Vx) * invΔx)[2:end-1,2:end-1] )
-    Dxy_c = SVector{2, Float64}( (∂y(V̄x) * invΔy)[2:end-1,:]       )
-    Dyy_c = SVector{2, Float64}( (∂y(Vy) * invΔy)[2:end-1,:]       )
-    Dyx_c = SVector{2, Float64}( (∂x(V̄y) * invΔx)                  ) 
+    Dxx_c = SVector{2}( (∂x(Vx) * invΔx)[2:end-1,2:end-1] )
+    Dxy_c = SVector{2}( (∂y(V̄x) * invΔy)[2:end-1,:]       )
+    Dyy_c = SVector{2}( (∂y(Vy) * invΔy)[2:end-1,:]       )
+    Dyx_c = SVector{2}( (∂x(V̄y) * invΔx)                  ) 
 
     # Velocity gradient - vertices
-    Dxx_v = SVector{2, Float64}( (∂x(V̄x) * invΔx)[:,2:end-1]       ) 
-    Dxy_v = SVector{2, Float64}( (∂y(Vx) * invΔy)[2:end-1,2:end-1] )  
-    Dyy_v = SVector{2, Float64}( (∂y(V̄y) * invΔy)                  )  
-    Dyx_v = SVector{2, Float64}( (∂x(Vy) * invΔx)[:,2:end-1]       ) 
+    Dxx_v = SVector{2}( (∂x(V̄x) * invΔx)[:,2:end-1]       ) 
+    Dxy_v = SVector{2}( (∂y(Vx) * invΔy)[2:end-1,2:end-1] )  
+    Dyy_v = SVector{2}( (∂y(V̄y) * invΔy)                  )  
+    Dyx_v = SVector{2}( (∂x(Vy) * invΔx)[:,2:end-1]       ) 
 
     # Deviatoric strain rate
     ε̇xx_c, ε̇yy_c, ε̇xy_c, ε̇kk_c = deviatoric_strain_rate(Dxx_c, Dxy_c, Dyx_c, Dyy_c)
     ε̇xx_v, ε̇yy_v, ε̇xy_v, ε̇kk_v = deviatoric_strain_rate(Dxx_v, Dxy_v, Dyx_v, Dyy_v)
 
     # Effective visco-elastic strain rate
-    Gc      = SVector{2, Float64}( materials.G[phases.c[i]] for i=1:2)
-    Gv      = SVector{2, Float64}( materials.G[phases.v[i]] for i=1:2)
-    _2GΔt_c = SVector{2, Float64}( @. inv(2 * Gc * Δ.t))
-    _2GΔt_v = SVector{2, Float64}( @. inv(2 * Gv * Δ.t))
+    Gc      = SVector{2}( materials.G[phases.c[i]] for i=1:2)
+    Gv      = SVector{2}( materials.G[phases.v[i]] for i=1:2)
+    _2GΔt_c = SVector{2}( @. inv(2 * Gc * Δ.t))
+    _2GΔt_v = SVector{2}( @. inv(2 * Gv * Δ.t))
     ϵ̇xx_c, ϵ̇yy_c, ϵ̇xy_c = effective_strain_rate(ε̇xx_c, ε̇yy_c, ε̇xy_c, τ0xx_c, τ0yy_c, τ0xy_c, _2GΔt_c)
     ϵ̇xx_v, ϵ̇yy_v, ϵ̇xy_v = effective_strain_rate(ε̇xx_v, ε̇yy_v, ε̇xy_v, τ0xx_v, τ0yy_v, τ0xy_v, _2GΔt_v)
 
@@ -277,16 +269,24 @@ function SMomentum_y_Generic(Vx_loc, Vy_loc, Pt, ΔP, τ0, 𝐷, phases, materia
     Ptc  = SVector{2}( @. Pt[2,:] + comp * ΔP[:] )
 
     # Stress
-    Tstress = promote_type(eltype(Vx_loc), eltype(Vy_loc), eltype(Pt), eltype(Ptc))
-    τyy = MVector{2, Tstress}(undef)
-    τxy = MVector{2, Tstress}(undef)
-    for i=1:2
-        τyy[i] = (𝐷.c[i][2,1] - 𝐷.c[i][4,1]) * ϵ̇xx_c[i] + (𝐷.c[i][2,2] - 𝐷.c[i][4,2]) * ϵ̇yy_c[i] + (𝐷.c[i][2,3] - 𝐷.c[i][4,3]) * ϵ̇xy_c[i] + (𝐷.c[i][2,4] - (𝐷.c[i][4,4] - 1.)) * Pt[2,i]
-        τxy[i] = 𝐷.v[i][3,1]                 * ϵ̇xx_v[i] + 𝐷.v[i][3,2]                 * ϵ̇yy_v[i] + 𝐷.v[i][3,3]                  * ϵ̇xy_v[i] + 𝐷.v[i][3,4]                        * Pt_v[i]
-    end
+    # Tstress = promote_type(eltype(Vx_loc), eltype(Vy_loc), eltype(Pt), eltype(Ptc))
+    # τyy = MVector{2, Tstress}(undef)
+    # τxy = MVector{2, Tstress}(undef)
+    # for i=1:2
+    #     τyy[i] = (𝐷.c[i][2,1] - 𝐷.c[i][4,1]) * ϵ̇xx_c[i] + (𝐷.c[i][2,2] - 𝐷.c[i][4,2]) * ϵ̇yy_c[i] + (𝐷.c[i][2,3] - 𝐷.c[i][4,3]) * ϵ̇xy_c[i] + (𝐷.c[i][2,4] - (𝐷.c[i][4,4] - 1.)) * Pt[2,i]
+    #     τxy[i] = 𝐷.v[i][3,1]                 * ϵ̇xx_v[i] + 𝐷.v[i][3,2]                 * ϵ̇yy_v[i] + 𝐷.v[i][3,3]                  * ϵ̇xy_v[i] + 𝐷.v[i][3,4]                        * Pt_v[i]
+    # end
+    τyy = SA[
+        (𝐷.c[1][2,1] - 𝐷.c[1][4,1]) * ϵ̇xx_c[1] + (𝐷.c[1][2,2] - 𝐷.c[1][4,2]) * ϵ̇yy_c[1] + (𝐷.c[1][2,3] - 𝐷.c[1][4,3]) * ϵ̇xy_c[1] + (𝐷.c[1][2,4] - (𝐷.c[1][4,4] - 1.)) * Pt[2,1]
+        (𝐷.c[2][2,1] - 𝐷.c[2][4,1]) * ϵ̇xx_c[2] + (𝐷.c[2][2,2] - 𝐷.c[2][4,2]) * ϵ̇yy_c[2] + (𝐷.c[2][2,3] - 𝐷.c[2][4,3]) * ϵ̇xy_c[2] + (𝐷.c[2][2,4] - (𝐷.c[2][4,4] - 1.)) * Pt[2,2]
+    ]
+    τxy = SA[
+        𝐷.v[1][3,1]                 * ϵ̇xx_v[1] + 𝐷.v[1][3,2]                 * ϵ̇yy_v[1] + 𝐷.v[1][3,3]                  * ϵ̇xy_v[1] + 𝐷.v[1][3,4]                        * Pt_v[1]
+        𝐷.v[2][3,1]                 * ϵ̇xx_v[2] + 𝐷.v[2][3,2]                 * ϵ̇yy_v[2] + 𝐷.v[2][3,3]                  * ϵ̇xy_v[2] + 𝐷.v[2][3,4]                        * Pt_v[2]
+    ]
 
     # Gravity
-    ρ    = SVector{2, Float64}( materials.ρ[phases.c[i]] for i=1:2)
+    ρ    = SVector{2}( materials.ρ[phases.c[i]] for i=1:2)
     ρg   = materials.g[2] * 0.5*(ρ[1] + ρ[2])
 
     # Residual
