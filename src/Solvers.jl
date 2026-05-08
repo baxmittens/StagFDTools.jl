@@ -1,5 +1,204 @@
 using SparseArrays
 
+# @views function KSP_GCR_Stokes!( x, M, b, noisy, Kuu, Kup, Kpu, Kpp; ηb=1e3, ϵ_l=1e-9, restart = 25
+#  )
+
+#     if nnz(Kpp) == 0 # incompressible limit
+#         𝐏inv  = ηb .* I(size(Kpp,1))
+#     else # compressible case
+#         𝐏inv  = spdiagm(1.0 ./diag(Kpp))
+#     end
+
+#     # KSP GCR solver
+#     norm_r, norm0 = 0.0, 0.0
+#     N         = length(x)
+#     maxit     = 1000
+#     ncyc, its = 0, 0
+#     i1, i2, success=0,0,0
+#     # Arrays for coupled problem
+#     f      = zeros(Float64, N)
+#     v      = zeros(Float64, N)
+#     s      = zeros(Float64, N)
+#     val    = zeros(Float64, restart)
+#     VV     = zeros(Float64, (restart,N))
+#     SS     = zeros(Float64, (restart,N))
+#     # Coupled
+#     # Initial residual
+#     f      = b - M*x 
+#     norm_r = norm(f)
+#     norm0  = norm_r;
+#     #
+#     ndofu = size(Kup,1)
+#     ndofp = size(Kup,2)
+#     Kuusc = Kuu - Kup*(𝐏inv*Kpu) # OK
+#     PC    =  0.5*(Kuusc + Kuusc') 
+#     t = @elapsed Kf    = cholesky(Hermitian(PC),check = false)
+#     @printf("Cholesky took = %02.2e s\n", t)
+#     # Arrays for decoupled problem
+#     su    = zeros(Float64, ndofu)
+#     fusc  = zeros(Float64, ndofu)
+#     sp    = zeros(Float64, ndofp)
+#     fu    = zeros(Float64, ndofu)
+#     fp    = zeros(Float64, ndofp)
+#     fu     .= f[1:ndofu]
+#     fp     .= f[ndofu+1:end]
+#     if (noisy > 1) @printf("       %1.4d KSP GCR Residual %1.12e %1.12e\n", 0, norm_r, norm_r/norm0); end
+#     # Solving procedure
+#     while ( success == 0 && its<maxit ) 
+#         for i1=1:restart
+#             # Apply preconditioner, s = PC^{-1} f
+#             # s = PC\f
+#             fusc .= fu  - Kup*(𝐏inv*fp + sp)
+#             su   .= Kf\fusc
+#             sp   .+= 𝐏inv*(fp - Kpu*su)
+#             s[1:ndofu]     .= su
+#             s[ndofu+1:end] .= sp
+#             # Action of Jacobian on s: v = J*s
+#             # JacobianAction!(v, M, s; r,kv,T,fc,TW,TE,dx,n)
+#             v .= M*s
+#             # Approximation of the Jv product
+#             for i2=1:i1
+#                 val[i2] = v' * VV[i2,:]
+#             end
+#             # Scaling
+#             for i2=1:i1
+#                 v .-= val[i2] * VV[i2,:]
+#                 s .-= val[i2] * SS[i2,:]
+#             end
+#             # -----------------
+#             r_dot_v = f'*v
+#             nrm     = norm(v)
+#             r_dot_v = r_dot_v / nrm
+#             # -----------------
+#             fact    = 1.0/nrm
+#             v     .*= fact
+#             s     .*= fact
+#             # -----------------
+#             fact    = r_dot_v;
+#             x     .+= fact*s
+#             f     .-= fact*v
+#             # -----------------
+#             norm_r  = norm(f) 
+#             fu     .= f[1:ndofu]
+#             fp     .= f[ndofu+1:end]
+#             @printf("  --> Powell-Hestenes Iteration %02d\n  Momentum res.   = %2.2e\n  Continuity res. = %2.2e\n", its, norm(fu)/sqrt(length(fu)), norm(fp)/sqrt(length(fp)))
+#             if norm(fu)/(length(fu)) < ϵ_l && norm(fp)/(length(fu)) < ϵ_l #(norm_r < eps * norm0 )
+#                 success = 1
+#                 println("converged")
+#                 break
+#             end
+#             # Store 
+#             VV[i1,:] .= v
+#             SS[i1,:] .= s
+#             its              += 1
+#         end
+#         its  += 1
+#         ncyc += 1
+#     end
+#     if (noisy>1) @printf("[%1.4d] %1.4d KSP GCR Residual %1.12e %1.12e\n", ncyc, its, norm_r, norm_r/norm0); end
+#     return its
+# end
+
+function KSP_GCR_Stokes!(
+    x, M, b, noisy, Kuu, Kup, Kpu, Kpp;
+    ηb      = 1e3, ϵ_l     = 1e-9, restart = 25, maxit   = 1000
+)
+
+    @views begin
+
+        Kuu = sparse(Kuu)
+        Kup = sparse(Kup)
+        Kpu = sparse(Kpu)
+        Kpp = sparse(Kpp)
+        M   = sparse(M)
+
+        ndofu = size(Kup,1)
+        ndofp = size(Kup,2)
+        N     = length(x)
+
+        Pinv = nnz(Kpp) == 0 ? fill(ηb, ndofp) : 1.0 ./ diag(Kpp)
+
+        Kuusc = Kuu - Kup * spdiagm(Pinv) * Kpu
+        Kf    = cholesky(Hermitian(Kuusc), check=false)
+
+        f = similar(x)
+        s = similar(x)
+        v = similar(x)
+
+        mul!(f, M, x)
+        @. f = b - f
+
+        norm0 = norm(f)
+
+        fu = f[1:ndofu]
+        fp = f[ndofu+1:end]
+
+        su = s[1:ndofu]
+        sp = s[ndofu+1:end]
+
+        VV  = zeros(eltype(x), N, restart)
+        SS  = zeros(eltype(x), N, restart)
+
+        tmpu = zeros(eltype(x), ndofu)
+        tmpp = zeros(eltype(x), ndofp)
+        fusc = zeros(eltype(x), ndofu)
+
+        its = 0
+
+        while its < maxit
+
+            for k = 1:restart
+
+                fill!(s, 0.0)
+                @. tmpp = Pinv * fp
+
+                mul!(tmpu, Kup, tmpp)
+                @. fusc = fu - tmpu
+
+                ldiv!(su, Kf, fusc)
+
+                mul!(tmpp, Kpu, su)
+
+                @. sp += Pinv * (fp - tmpp)
+
+                mul!(v, M, s)   
+
+                for j = 1:k-1
+                    hj = dot(v, VV[:,j])
+                    BLAS.axpy!(-hj, VV[:,j], v)
+                    BLAS.axpy!(-hj, SS[:,j], s)
+                end
+
+                nrm = norm(v)
+
+                @. v /= nrm
+                @. s /= nrm
+
+                α = dot(f, v)
+
+                BLAS.axpy!( α, s, x)
+                BLAS.axpy!(-α, v, f)
+
+                if norm(fu)/sqrt(ndofu) < ϵ_l &&
+                   norm(fp)/sqrt(ndofp) < ϵ_l
+
+                    noisy > 0 && println("KSP converged in $its iterations")
+                    return its
+                end
+
+                copyto!(VV[:,k], v)
+                copyto!(SS[:,k], s)
+
+                its += 1
+            end
+        end
+
+        noisy > 0 && println("KSP failed after $its iterations")
+
+        return its
+    end
+end
+
 function DecoupledSolver(𝐊, 𝐐, 𝐐ᵀ, 𝐏, fu, fp; fact=:chol,  ηb=1e3, niter_l=10, ϵ_l=1e-11, 𝐊_PC=I(size(𝐊,1)))
     
     if nnz(𝐏) == 0 # incompressible limit

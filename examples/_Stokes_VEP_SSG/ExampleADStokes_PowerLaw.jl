@@ -3,6 +3,13 @@ import Statistics:mean
 using DifferentiationInterface
 using TimerOutputs
 
+function linear_tol(r, r0; ηmin=1e-10, ηmax=1e-1, α=0.7, c=0.5)
+
+    η = c * (r / r0)^α
+
+    return clamp(η, ηmin, ηmax)
+end
+
 @views function main(nc)
     #--------------------------------------------#
 
@@ -70,12 +77,18 @@ using TimerOutputs
         Fields(ExtendableSparseMatrix(nVy, nVx), ExtendableSparseMatrix(nVy, nVy), ExtendableSparseMatrix(nVy, nPt)), 
         Fields(ExtendableSparseMatrix(nPt, nVx), ExtendableSparseMatrix(nPt, nVy), ExtendableSparseMatrix(nPt, nPt))
     )
-    𝐊  = ExtendableSparseMatrix(nVx + nVy, nVx + nVy)
-    𝐐  = ExtendableSparseMatrix(nVx + nVy, nPt)
-    𝐐ᵀ = ExtendableSparseMatrix(nPt, nVx + nVy)
-    𝐏  = ExtendableSparseMatrix(nPt, nPt)
-    dx = zeros(nVx + nVy + nPt)
-    r  = zeros(nVx + nVy + nPt)
+    M_PC = Fields(
+        Fields(ExtendableSparseMatrix(nVx, nVx), ExtendableSparseMatrix(nVx, nVy), ExtendableSparseMatrix(nVx, nPt)), 
+        Fields(ExtendableSparseMatrix(nVy, nVx), ExtendableSparseMatrix(nVy, nVy), ExtendableSparseMatrix(nVy, nPt)), 
+        Fields(ExtendableSparseMatrix(nPt, nVx), ExtendableSparseMatrix(nPt, nVy), ExtendableSparseMatrix(nPt, nPt))
+    )
+    𝐊    = ExtendableSparseMatrix(nVx + nVy, nVx + nVy)
+    𝐊_PC = ExtendableSparseMatrix(nVx + nVy, nVx + nVy)
+    𝐐    = ExtendableSparseMatrix(nVx + nVy, nPt)
+    𝐐ᵀ   = ExtendableSparseMatrix(nPt, nVx + nVy)
+    𝐏    = ExtendableSparseMatrix(nPt, nPt)
+    dx   = zeros(nVx + nVy + nPt)
+    r    = zeros(nVx + nVy + nPt)
 
     #--------------------------------------------#
     # Intialise field
@@ -159,17 +172,19 @@ using TimerOutputs
         τ0.xy .= τ.xy
         Pt0   .= Pt
 
-        iter = 0
+        iter, ϵ0, ϵ = 0, 0.0, 0.0
+
+        niter = 1
 
         while iter<niter
 
-            @printf("Iteration %04d\n", iter)
             iter +=1
+            @printf("Iteration %04d\n", iter)
 
             #--------------------------------------------#
             # Residual check        
             @timeit to "Residual" begin
-                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
+                @time TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
                 @show extrema(λ̇.c)
                 @show extrema(λ̇.v)
                 ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ) 
@@ -177,43 +192,61 @@ using TimerOutputs
                 ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
             end
 
-            err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
-            err.y[iter] = @views norm(R.y[inx_Vy,iny_Vy])/sqrt(nVy)
-            err.p[iter] = @views norm(R.p[inx_c,iny_c])/sqrt(nPt)
-            max(err.x[iter], err.y[iter]) < ϵ_nl ? break : nothing
+            # err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
+            # err.y[iter] = @views norm(R.y[inx_Vy,iny_Vy])/sqrt(nVy)
+            # err.p[iter] = @views norm(R.p[inx_c,iny_c])/sqrt(nPt)
+            # ϵ =  max(err.x[iter], err.y[iter])
+            # (iter == 1) && (ϵ0 = ϵ)
+            # ϵ < ϵ_nl ? break : nothing
 
-            #--------------------------------------------#
-            # Set global residual vector
-            SetRHS!(r, R, number, type, nc)
+            # #--------------------------------------------#
+            # # Set global residual vector
+            # SetRHS!(r, R, number, type, nc)
 
-            #--------------------------------------------#
-            # Assembly
-            @timeit to "Assembly" begin
-                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-            end
+            # #--------------------------------------------#
+            # # Assembly
+            # @timeit to "Assembly" begin
+            #     AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
+            #     AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
+            #     AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
 
-            #--------------------------------------------# 
-            # Stokes operator as block matrices
-            𝐊  .= [M.Vx.Vx M.Vx.Vy; M.Vy.Vx M.Vy.Vy]
-            𝐐  .= [M.Vx.Pt; M.Vy.Pt]
-            𝐐ᵀ .= [M.Pt.Vx M.Pt.Vy]
-            𝐏  .= M.Pt.Pt
+            #     # Preconditioner
+            #     AssembleContinuity2D!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, pattern, type, BC, nc, Δ)
+            #     AssembleMomentum2D_x!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, pattern, type, BC, nc, Δ)
+            #     AssembleMomentum2D_y!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, pattern, type, BC, nc, Δ)
+            # end
 
-            #--------------------------------------------#
+            # #--------------------------------------------# 
+            # # Stokes operator as block matrices
+            # 𝐊  .= [M.Vx.Vx M.Vx.Vy; M.Vy.Vx M.Vy.Vy]
+            # 𝐐  .= [M.Vx.Pt; M.Vy.Pt]
+            # 𝐐ᵀ .= [M.Pt.Vx M.Pt.Vy]
+            # 𝐏  .= M.Pt.Pt
+            # # Picard preconditioner
+            # 𝐊_PC  .= [M_PC.Vx.Vx M_PC.Vx.Vy; M_PC.Vy.Vx M_PC.Vy.Vy]
+
+            # #--------------------------------------------#
      
-            # Direct-iterative solver
-            fu   = @views -r[1:size(𝐊,1)]
-            fp   = @views -r[size(𝐊,1)+1:end]
-            u, p = DecoupledSolver(𝐊, 𝐐, 𝐐ᵀ, 𝐏, fu, fp; fact=:lu,  ηb=1e5, niter_l=10, ϵ_l=1e-11)
-            @views dx[1:size(𝐊,1)]     .= u
-            @views dx[size(𝐊,1)+1:end] .= p
+            # # Direct-iterative solver
+            # # fu   = @views -r[1:size(𝐊,1)]
+            # # fp   = @views -r[size(𝐊,1)+1:end]
+            # # @time u, p = DecoupledSolver(𝐊, 𝐐, 𝐐ᵀ, 𝐏, fu, fp; fact=:lu,  ηb=1e5, niter_l=10, ϵ_l=1e-11)
+            # # @views dx[1:size(𝐊,1)]     .= u
+            # # @views dx[size(𝐊,1)+1:end] .= p
 
-            #--------------------------------------------#
-            # Line search & solution update
-            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
-            UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
+            # 𝐌 = [M.Vx.Vx M.Vx.Vy M.Vx.Pt; M.Vy.Vx M.Vy.Vy M.Vy.Pt; M.Pt.Vx M.Pt.Vy  M.Pt.Pt]
+            # # ϵ_l = linear_tol(ϵ, ϵ0; ηmin=1e-3, ηmax=ϵ_nl, α=0.7, c=0.5)
+            # ϵ_l = 1e-11
+            # @timeit to "Linear solve" begin
+            #     KSP_GCR_Stokes!( dx, 𝐌, .-r, -1, 𝐊_PC, 𝐐, 𝐐ᵀ,  𝐏, ηb=1e5, ϵ_l=ϵ_l, restart=20 )
+            # end
+
+            # #--------------------------------------------#
+            # # Line search & solution update
+            # @timeit to "Line search" begin
+            #     imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
+            # end
+            # UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
 
         end
 
@@ -221,28 +254,28 @@ using TimerOutputs
         Pt .+= ΔPt.c
 
         #--------------------------------------------#
-        fig = Figure(size=(900,700), fontsize=14)
+        # fig = Figure(size=(900,700), fontsize=14)
 
-        ax1 = Axis(fig[1,1], xlabel="Iterations @ step $(it)", ylabel="log₁₀ error", title="Convergence")
-        scatter!(ax1, 1:iter, log10.(err.x[1:iter]), markersize=6, label="Vx")
-        scatter!(ax1, 1:iter, log10.(err.y[1:iter]), markersize=6, label="Vy")
-        axislegend(ax1, position=:rt)
+        # ax1 = Axis(fig[1,1], xlabel="Iterations @ step $(it)", ylabel="log₁₀ error", title="Convergence")
+        # scatter!(ax1, 1:iter, log10.(err.x[1:iter]), markersize=6, label="Vx")
+        # scatter!(ax1, 1:iter, log10.(err.y[1:iter]), markersize=6, label="Vy")
+        # axislegend(ax1, position=:rt)
 
-        ax2 = Axis(fig[1,2], title="Vx", aspect=DataAspect())
-        heatmap!(ax2, xv, yc, V.x[inx_Vx,iny_Vx]')
-        xlims!(ax2, extrema(xv))
+        # ax2 = Axis(fig[1,2], title="Vx", aspect=DataAspect())
+        # heatmap!(ax2, xv, yc, V.x[inx_Vx,iny_Vx]')
+        # xlims!(ax2, extrema(xv))
 
-        ax3 = Axis(fig[2,1], title="ε̇II", aspect=DataAspect())
-        hm3 = heatmap!(ax3, xc, yc, log10.(ε̇.II[inx_c,iny_c])'; colormap=:coolwarm, colorrange=(-0.4,0.4))
-        xlims!(ax3, extrema(xc))
-        Colorbar(fig[2,1, Right()], hm3, width=12)
+        # ax3 = Axis(fig[2,1], title="ε̇II", aspect=DataAspect())
+        # hm3 = heatmap!(ax3, xc, yc, log10.(ε̇.II[inx_c,iny_c])'; colormap=:coolwarm, colorrange=(-0.4,0.4))
+        # xlims!(ax3, extrema(xc))
+        # Colorbar(fig[2,1, Right()], hm3, width=12)
 
-        ax4 = Axis(fig[2,2], title="τxx", aspect=DataAspect())
-        hm4 = heatmap!(ax4, xc, yc, τ.xx[inx_c,iny_c]'; colormap=:turbo)
-        xlims!(ax4, extrema(xc))
-        Colorbar(fig[2,2, Right()], hm4, width=12)
+        # ax4 = Axis(fig[2,2], title="τxx", aspect=DataAspect())
+        # hm4 = heatmap!(ax4, xc, yc, τ.xx[inx_c,iny_c]'; colormap=:turbo)
+        # xlims!(ax4, extrema(xc))
+        # Colorbar(fig[2,2, Right()], hm4, width=12)
 
-        display(fig)
+        # display(fig)
 
     end
     display(to)
@@ -250,5 +283,5 @@ end
 
 
 let
-    main((x = 100, y = 100))
+    main((x = 200, y = 200))
 end
