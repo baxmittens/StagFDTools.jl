@@ -192,12 +192,12 @@ function Kiss2023ReturnMapping(τ, P, η_ve, comp, β, Δt, C, φ, ψ, ηvp, σ_
     l1 = line(P, K, Δt, η_ve, 90.0, pc1, τc1)
     l2 = line(P, K, Δt, η_ve, 90.0, pc2, τc2)
     l3 = line(P, K, Δt, η_ve, ψ, pc2, τc2)
-    if max(τ - P * sind(φ) - C * cosd(φ), τ - P - σ_T, -P - (σ_T - δσ_T)) > 0.0                                                         # check if F_tr > 0
+    if max(τ - P * sind(φ) - C * cosd(φ), τ - P - σ_T, -P - (σ_T - δσ_T)) > 0.0
         if τ <= τc1
             # pressure limiter 
             dqdp = -1.0
             f = -P - (σ_T - δσ_T)
-            λ̇ = f / (K * Δt)                                                                                                                          # tensile pressure cutoff
+            λ̇ = f / (K * Δt)
             τc = τ
             Pc = P - K * Δt * λ̇ * dqdp
             f = -Pc - (σ_T - δσ_T)
@@ -272,7 +272,7 @@ function return_mapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δt, comp, pl::Druc
 end
 
 function return_mapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δt, comp, pl::DruckerHyperbolic, phases)
-    p = (pl.C[phases], pl.cosϕ[phases], pl.sinϕ[phases], pl.cosϕ[phases], pl.sinψ[phases], pl.σT[phases], pl.ηvp[phases])
+    p = (pl.C[phases], pl.cosϕ[phases], pl.sinϕ[phases], pl.sinψ[phases], pl.σT[phases], pl.ηvp[phases])
     return NonLinearReturnMapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δt, p, DruckerHyperbolic())
 end
 
@@ -289,12 +289,12 @@ function return_mapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δt, comp, pl::Kiss
 end
 
 function return_mapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δt, comp, pl::Tensile, phases)
-    return TensileReturnMapping(τII, P, ηve, comp, β, Δt, pl.σT[phases], pl.ηvp[phases])
+    return TensileReturnMapping(τII, P, ηvep, comp, β, Δt, pl.σT[phases], pl.ηvp[phases])
 end
 
 # Strain rate trial ------------------------------------------
 function StrainRateTrial(τII, G, Δt, B, n)
-    ε̇II_vis = B .* τII .^ n
+    ε̇II_vis = B * τII^n
     ε̇II_trial = ε̇II_vis + τII / (2 * G * Δt)
     return ε̇II_trial
 end
@@ -338,12 +338,13 @@ function LocalRheology(ε̇, Dkk, P0, materials, phase_ratios, Δ)
 
     # Effective strain rate & pressure
     ε̇II = sqrt.((ε̇[1]^2 + ε̇[2]^2 + (-ε̇[1] - ε̇[2])^2) / 2 + ε̇[3]^2) + eps0
-    P = ε̇[4]
+    P_trial = ε̇[4]
 
     η_average, λ̇_average, P_average, τ_average = 0.0, 0.0, 0.0, 0.0
 
     for phases = 1:nphases
 
+        P = P_trial
         # Parameters
         ϵ = 1e-10 # tolerance
         n = materials.n[phases]

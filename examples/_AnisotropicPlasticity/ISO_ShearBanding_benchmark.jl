@@ -1,12 +1,12 @@
 #---------------------------------------------------------------------------------------
 # Compute deformation field with VEVP rheology and benchmark with M2Di code from Duretz et al., 2018
 #---------------------------------------------------------------------------------------
-using StagFDTools, StagFDTools.Stokes, StagFDTools.Rheology, ExtendableSparse, StaticArrays, Plots, LinearAlgebra, SparseArrays, Printf
+using StagFDTools, StagFDTools.Stokes, StagFDTools.Rheology, ExtendableSparse, StaticArrays, LinearAlgebra, SparseArrays, Printf
 import Statistics:mean
 using DifferentiationInterface
 using TimerOutputs
 using MAT
-using Plots
+using CairoMakie
 
 function invariants(Δ, τ, ε̇, inx_c, iny_c, εII)
     
@@ -367,17 +367,37 @@ end
         #--------------------------------------------#
         # Plot fields
         if flag.fields
-            z1 = heatmap(Grid.v.x, Grid.c.y, (V.x[inx_Vx,iny_Vx]').*1e7./sc.t, aspect_ratio=1, xlim=extrema(Grid.c.x), title="Vx [10⁻⁶]")
-            z2 = heatmap(Grid.c.x, Grid.c.y,  (Pt[inx_c,iny_c]').*sc.σ, aspect_ratio=1, xlim=extrema(Grid.c.x), title="Pt")
-            # z3 = heatmap(xc, yc,  log10.((ε̇II)'./sc.t), aspect_ratio=1, xlim=extrema(xc), title="ε̇II", c=:coolwarm)
-            z3 = heatmap(Grid.c.x, Grid.c.y,  log10.(εII)', aspect_ratio=1, xlim=extrema(Grid.c.x), title="εII", c=:coolwarm)
-            z4 = heatmap(Grid.c.x, Grid.c.y,  ((τII').*sc.σ)*1e4, aspect_ratio=1, xlim=extrema(Grid.c.x), title="τII e-4", c=:turbo)
+            fig_fields = Figure(size=(1000, 800))
+            ax1 = Axis(fig_fields[1, 1], aspect=DataAspect())
+            ax2 = Axis(fig_fields[1, 3], aspect=DataAspect())
+            ax3 = Axis(fig_fields[2, 1], aspect=DataAspect())
+            ax4 = Axis(fig_fields[2, 3], aspect=DataAspect())
+
+            hm1 = heatmap!(ax1, Grid.v.x, Grid.c.y, (V.x[inx_Vx,iny_Vx]').*1e9./sc.t)
+            hm2 = heatmap!(ax2, Grid.c.x, Grid.c.y, (Pt[inx_c,iny_c]').*1e4.*sc.σ; colormap=:turbo)
+            hm3 = heatmap!(ax3, Grid.c.x, Grid.c.y, log10.(εII)'; colormap=:coolwarm)
+            hm4 = heatmap!(ax4, Grid.c.x, Grid.c.y, ((τII').*1e4.*sc.σ); colormap=:turbo)
+            Colorbar(fig_fields[1, 2], hm1, label="Vx [10⁻⁹ m s⁻¹]")
+            Colorbar(fig_fields[1, 4], hm2, label="P [10⁻⁴ Pa]")
+            Colorbar(fig_fields[2, 2], hm3, label="log10(ε̇)")
+            Colorbar(fig_fields[2, 4], hm4, label="τ [10⁻⁴ Pa]")
+
+
+            xlims!(ax1, extrema(Grid.c.x)...)
+            xlims!(ax2, extrema(Grid.c.x)...)
+            xlims!(ax3, extrema(Grid.c.x)...)
+            xlims!(ax4, extrema(Grid.c.x)...)
             if flag.Matlab && m !== nothing
-                # z3m = heatmap(m.xc, m.yc, log10.((m.ε̇II)'./sc.t, aspect_ratio=1, xlim=extrema(m.xc), title="ε̇II from M2Di", c=:coolwarm)
-                z3m = heatmap(m.xc, m.yc, log10.(m.εII)', aspect_ratio=1, xlim=extrema(m.xc), title="εII from M2Di", c=:coolwarm)
-                display(plot(z3, z3m, layout=(1,2)))
+                fig_cmp = Figure(size=(1000, 400))
+                ax_cmp1 = Axis(fig_cmp[1, 1], title="εII", aspect=DataAspect())
+                ax_cmp2 = Axis(fig_cmp[1, 2], title="εII from M2Di", aspect=DataAspect())
+                heatmap!(ax_cmp1, Grid.c.x, Grid.c.y, log10.(εII)'; colormap=:coolwarm)
+                heatmap!(ax_cmp2, m.xc, m.yc, log10.(m.εII)'; colormap=:coolwarm)
+                xlims!(ax_cmp1, extrema(Grid.c.x)...)
+                xlims!(ax_cmp2, extrema(m.xc)...)
+                display(fig_cmp)
             else
-                display(plot(z1, z2, z3, z4, layout=(2,2)))
+                display(fig_fields)
             end
 
             #z0 = plot(xlabel="Iterations @ step $(it) ", ylabel="log₁₀ error", legend=:topright)

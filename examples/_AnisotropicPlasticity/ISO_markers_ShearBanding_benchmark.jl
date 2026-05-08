@@ -1,12 +1,12 @@
 #---------------------------------------------------------------------------------------
 # Compute deformation field with VEVP rheology and benchmark with M2Di code from Duretz et al., 2018
 #---------------------------------------------------------------------------------------
-using StagFDTools, StagFDTools.Stokes, StagFDTools.Rheology, ExtendableSparse, StaticArrays, Plots, LinearAlgebra, SparseArrays, Printf
+using StagFDTools, StagFDTools.Stokes, StagFDTools.Rheology, ExtendableSparse, StaticArrays, LinearAlgebra, SparseArrays, Printf
 import Statistics:mean
 using DifferentiationInterface
 using TimerOutputs
 using MAT
-using Plots
+using CairoMakie
 
 function invariants(Δ, τ, ε̇, inx_c, iny_c, εII)
     
@@ -251,12 +251,12 @@ end
     @views begin
         BC.Vx[     2, iny_Vx] .= (type.Vx[     1, iny_Vx] .== :Neumann_normal) .* D_BC[1,1]
         BC.Vx[ end-1, iny_Vx] .= (type.Vx[   end, iny_Vx] .== :Neumann_normal) .* D_BC[1,1]
-        BC.Vx[inx_Vx,      2] .= (type.Vx[inx_Vx,      2] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx,     2] .== :Dirichlet_tangent) .* (D_BC[1,1]*xv .+ D_BC[1,2]*yv[1]  )
-        BC.Vx[inx_Vx,  end-1] .= (type.Vx[inx_Vx,  end-1] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx, end-1] .== :Dirichlet_tangent) .* (D_BC[1,1]*xv .+ D_BC[1,2]*yv[end])
+        BC.Vx[inx_Vx,      2] .= (type.Vx[inx_Vx,      2] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx,     2] .== :Dirichlet_tangent) .* (D_BC[1,1]*Grid.v.x .+ D_BC[1,2]*Grid.v.y[1]  )
+        BC.Vx[inx_Vx,  end-1] .= (type.Vx[inx_Vx,  end-1] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx, end-1] .== :Dirichlet_tangent) .* (D_BC[1,1]*Grid.v.y .+ D_BC[1,2]*Grid.v.y[end])
         BC.Vy[inx_Vy,     2 ] .= (type.Vy[inx_Vy,     1 ] .== :Neumann_normal) .* D_BC[2,2]
         BC.Vy[inx_Vy, end-1 ] .= (type.Vy[inx_Vy,   end ] .== :Neumann_normal) .* D_BC[2,2]
-        BC.Vy[     2, iny_Vy] .= (type.Vy[     2, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[    2, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*xv[1]   .+ D_BC[2,2]*yv)
-        BC.Vy[ end-1, iny_Vy] .= (type.Vy[ end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*xv[end] .+ D_BC[2,2]*yv)
+        BC.Vy[     2, iny_Vy] .= (type.Vy[     2, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[    2, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*Grid.v.x[1]   .+ D_BC[2,2]*Grid.v.y)
+        BC.Vy[ end-1, iny_Vy] .= (type.Vy[ end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*Grid.v.x[end] .+ D_BC[2,2]*Grid.v.y)
     end
 
     #------------------------------------------------------------------#
@@ -272,7 +272,7 @@ end
     mphase[((m.Xm .- ccord.x).^2 .+ (m.Ym .- ccord.y).^2) .<= (25e-4)] .= 2
 
     # Set phase ratios
-    PhaseRatios!(phase_ratios, phase_weights, m, mphase, xce, yce, xve, yve, Δ)
+    PhaseRatios!(phase_ratios, phase_weights, m, mphase, Grid.c_e.x, Grid.c_e.y, Grid.v_e.x, Grid.v_e.y, Δ)
     # check 
     for I in CartesianIndices(phase_ratios.c)
         s = sum(phase_ratios.c[I])
@@ -281,7 +281,7 @@ end
         end
     end
     # Cut ghost cells
-    phase_info = (
+    phase_ratios = (
         c   = phase_ratios.c[2:end-1,2:end-1],
         v   = phase_ratios.v[2:end-1,2:end-1],
     )
@@ -294,9 +294,11 @@ end
     to   = TimerOutput()
     εII  = zeros(nc.x,nc.y)
     if flag.strain_evo
-       z7 = plot(xlabel = "x", ylabel = "εᵢᵢ [10⁻³]", title = "StagFD",size = (700,300))
+        fig7 = Figure(size=(700, 300))
+        ax7 = Axis(fig7[1, 1], xlabel="x", ylabel="εᵢᵢ [10⁻³]", title="StagFD")
         if flag.Matlab
-            z8 = plot(xlabel = "x", ylabel = "εᵢᵢ [10⁻³]", title = "M2Di code", size = (700,300))
+            fig8 = Figure(size=(700, 300))
+            ax8 = Axis(fig8[1, 1], xlabel="x", ylabel="εᵢᵢ [10⁻³]", title="M2Di code")
         end
     end
     #-----------------------------------------------------------------#
@@ -315,7 +317,7 @@ end
         Pt0   .= Pt
 
         # Compute bulk and shear moduli
-        compute_grid_fields!(G, β, ρ, materials, phase_info, nc, size_c, size_v, m.nphases)
+        compute_grid_fields!(G, β, ρ, materials, phase_ratios, nc, size_c, size_v, m.nphases)
 
         for iter=1:niter
 
@@ -324,7 +326,7 @@ end
             #--------------------------------------------#
             # Residual check        
             @timeit to "Residual" begin
-                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_info, Δ)
+                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
                 @show extrema(λ̇.c)
                 @show extrema(λ̇.v)
                 ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, materials, number, type, BC, nc, Δ) 
@@ -370,9 +372,9 @@ end
 
             #--------------------------------------------#
             # Line search & solution update
-            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, ρ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_info, nc, Δ)
+            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, ρ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_ratios, nc, Δ)
             UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
-            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_info, Δ)
+            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
 
         end
 
@@ -391,18 +393,38 @@ end
         
         #--------------------------------------------#
         # Plot fields
-        if flag.fields
-            z1 = heatmap(xv, yc, (V.x[inx_Vx,iny_Vx]').*1e7./sc.t, aspect_ratio=1, xlim=extrema(xc), title="Vx [10⁻⁶]")
-            z2 = heatmap(xc, yc,  (Pt[inx_c,iny_c]').*sc.σ, aspect_ratio=1, xlim=extrema(xc), title="Pt")
-            # z3 = heatmap(xc, yc,  log10.((ε̇II)'./sc.t), aspect_ratio=1, xlim=extrema(xc), title="ε̇II", c=:coolwarm)
-            z3 = heatmap(xc, yc,  log10.(εII)', aspect_ratio=1, xlim=extrema(xc), title="εII", c=:coolwarm)
-            z4 = heatmap(xc, yc,  ((τII').*sc.σ)*1e4, aspect_ratio=1, xlim=extrema(xc), title="τII e-4", c=:turbo)
+         if flag.fields
+            fig_fields = Figure(size=(1000, 800))
+            ax1 = Axis(fig_fields[1, 1], aspect=DataAspect())
+            ax2 = Axis(fig_fields[1, 3], aspect=DataAspect())
+            ax3 = Axis(fig_fields[2, 1], aspect=DataAspect())
+            ax4 = Axis(fig_fields[2, 3], aspect=DataAspect())
+
+            hm1 = heatmap!(ax1, Grid.v.x, Grid.c.y, (V.x[inx_Vx,iny_Vx]').*1e9./sc.t)
+            hm2 = heatmap!(ax2, Grid.c.x, Grid.c.y, (Pt[inx_c,iny_c]').*1e4.*sc.σ; colormap=:turbo)
+            hm3 = heatmap!(ax3, Grid.c.x, Grid.c.y, log10.(εII)'; colormap=:coolwarm)
+            hm4 = heatmap!(ax4, Grid.c.x, Grid.c.y, ((τII').*1e4.*sc.σ); colormap=:turbo)
+            Colorbar(fig_fields[1, 2], hm1, label="Vx [10⁻⁹ m s⁻¹]")
+            Colorbar(fig_fields[1, 4], hm2, label="P [10⁻⁴ Pa]")
+            Colorbar(fig_fields[2, 2], hm3, label="log10(ε̇)")
+            Colorbar(fig_fields[2, 4], hm4, label="τ [10⁻⁴ Pa]")
+
+
+            xlims!(ax1, extrema(Grid.c.x)...)
+            xlims!(ax2, extrema(Grid.c.x)...)
+            xlims!(ax3, extrema(Grid.c.x)...)
+            xlims!(ax4, extrema(Grid.c.x)...)
             if flag.Matlab && m !== nothing
-                # z3m = heatmap(m.xc, m.yc, log10.((m.ε̇II)'./sc.t, aspect_ratio=1, xlim=extrema(m.xc), title="ε̇II from M2Di", c=:coolwarm)
-                z3m = heatmap(m.xc, m.yc, log10.(m.εII)', aspect_ratio=1, xlim=extrema(m.xc), title="εII from M2Di", c=:coolwarm)
-                display(plot(z3, z3m, layout=(1,2)))
+                fig_cmp = Figure(size=(1000, 400))
+                ax_cmp1 = Axis(fig_cmp[1, 1], title="εII", aspect=DataAspect())
+                ax_cmp2 = Axis(fig_cmp[1, 2], title="εII from M2Di", aspect=DataAspect())
+                heatmap!(ax_cmp1, Grid.c.x, Grid.c.y, log10.(εII)'; colormap=:coolwarm)
+                heatmap!(ax_cmp2, m.xc, m.yc, log10.(m.εII)'; colormap=:coolwarm)
+                xlims!(ax_cmp1, extrema(Grid.c.x)...)
+                xlims!(ax_cmp2, extrema(m.xc)...)
+                display(fig_cmp)
             else
-                display(plot(z1, z2, z3, z4, layout=(2,2)))
+                display(fig_fields)
             end
 
             #z0 = plot(xlabel="Iterations @ step $(it) ", ylabel="log₁₀ error", legend=:topright)
@@ -411,8 +433,6 @@ end
             #z0 = scatter!(1:niter, log10.(err.p[1:niter]), label="Pt")
             # dislpay(z0)
         end
-        @show (3/materials.β[1] - 2*materials.G[1])/(2*(3/materials.β[1] + 2*materials.G[1]))
-
         #--------------------------------------------#
         # PLot time evolution of accumulated strain
         if flag.strain_evo
@@ -421,14 +441,16 @@ end
                 cur_ε = bulk_rate*Δ.t*it
                 @show(cur_ε )
                 if cur_ε ≈ ε_bulk[d]
-                    plot!(z7,C[2,:],(ε_prof)*1e3, label = "$(@sprintf("%0.1f", cur_ε*1e4)) [10⁻⁴]")
+                    lines!(ax7, C[2,:], (ε_prof)*1e3, label = "$(@sprintf("%0.1f", cur_ε*1e4)) [10⁻⁴]")
+                    axislegend(ax7)
                     if flag.Matlab
                         if m !== nothing
-                            plot!(z8,m.C[2,:],(m.ε_prof)*1e3, label = "$(@sprintf("%0.1f", m.incr*it*1e4)) [10⁻⁴]") 
-                            display(plot(z7,z8, layout=(1,2)))
+                            lines!(ax8, m.C[2,:], (m.ε_prof)*1e3, label = "$(@sprintf("%0.1f", m.incr*it*1e4)) [10⁻⁴]")
+                            axislegend(ax8)
+                            display(fig8)
                         end
                     else
-                        display(z7)
+                        display(fig7)
                     end 
                     d += 1
                     if d > 5

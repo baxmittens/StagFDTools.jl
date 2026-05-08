@@ -19,6 +19,7 @@ Base.@kwdef struct DruckerHyperbolic <: AbstractPlasticity
     cosϕ::Vector{Float64} = Float64[]
     sinϕ::Vector{Float64} = Float64[]
     sinψ::Vector{Float64} = Float64[]
+    cosψ::Vector{Float64} = Float64[]
 end
 
 Base.@kwdef struct DruckerAniso <: AbstractPlasticity
@@ -111,6 +112,7 @@ initialize(::Type{DruckerHyperbolic}, n::Integer) = DruckerHyperbolic(
     cosϕ=ones(n),
     sinϕ=ones(n),
     sinψ=ones(n),
+    cosψ=ones(n),
 )
 
 initialize(::Type{DruckerAniso}, n::Integer) = DruckerAniso(
@@ -199,6 +201,7 @@ function preprocess!(dh::DruckerHyperbolic)
     @. dh.cosϕ = cosd(dh.ϕ)
     @. dh.sinϕ = sind(dh.ϕ)
     @. dh.sinψ = sind(dh.ψ)
+    @. dh.cosψ = cosd(dh.ψ)
 end
 
 function preprocess!(da::DruckerAniso)
