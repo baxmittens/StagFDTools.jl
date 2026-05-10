@@ -201,7 +201,7 @@ function SMomentum_x_Generic(Vx_loc, Vy_loc, Pt, ΔP, τ0, 𝐷, phases, materia
 
     # Corrected pressure
     comp = materials.compressible
-    Ptc  = SVector{2}( @. Pt[:,2] + comp * ΔP[:] )
+    Ptc  = SVector{2}(Pt[i,2] + comp * ΔP[i] for i=1:2)
 
     # Stress
     σxx = SVector{2}(
@@ -266,7 +266,7 @@ function SMomentum_y_Generic(Vx_loc, Vy_loc, Pt, ΔP, τ0, 𝐷, phases, materia
 
     # Corrected pressure
     comp = materials.compressible
-    Ptc  = SVector{2}( @. Pt[2,:] + comp * ΔP[:] )
+    Ptc  = SVector{2}(Pt[2,i] + comp * ΔP[i] for i=1:2)
 
     # Stress
     σyy = SVector{2}(
@@ -962,118 +962,120 @@ end
             ε̇vec  = @SVector([ϵ̇xx, ϵ̇yy, ϵ̇xy, Pt[i,j]])
 
             # Tangent operator used for Newton Linearisation
-            stress_state, τ_vec, jac = ad_value_and_jacobian_first(StressVector!, ε̇vec, ε̇kk, Pt0[i,j], materials, phases.c[i,j], Δ)
-            # _, η_local, λ̇_local, τII_local = stress_state
+            stress_state = StressVector!(ε̇vec, ε̇kk, Pt0[i,j], materials, phases.c[i,j], Δ)
+            τ_vec, jac = ad_jacobian_first(StressVector!, ε̇vec, ε̇kk, Pt0[i,j], materials, phases.c[i,j], Δ)
+            _, η_local, λ̇_local, τII_local = stress_state
 
-            # @views 𝐷_ctl.c[i,j] .= jac
+            @views 𝐷_ctl.c[i,j] .= jac
 
-            # # Tangent operator used for Picard Linearisation
-            # 𝐷.c[i,j] .= diagm(2 * η_local * _ones)
-            # 𝐷.c[i,j][4,4] = 1
+            # Tangent operator used for Picard Linearisation
+            𝐷.c[i,j] .= diagm(2 * η_local * _ones)
+            𝐷.c[i,j][4,4] = 1
 
-            # # Update stress
-            # τ.xx[i,j]  = τ_vec[1]
-            # τ.yy[i,j]  = τ_vec[2]
-            # τ.II[i,j]  = τII_local
-            # ε̇.xx[i,j]  = ε̇xx
-            # ε̇.yy[i,j]  = ε̇yy
-            # ε̇.II[i,j]  = sqrt(1/2*(ε̇xx^2 + ε̇yy^2) + ε̇xy^2)
-            # λ̇.c[i,j]   = λ̇_local
-            # η.c[i,j]   = η_local
-            # ΔPt.c[i,j] = (τ_vec[4] - Pt[i,j])
+            # Update stress
+            τ.xx[i,j]  = τ_vec[1]
+            τ.yy[i,j]  = τ_vec[2]
+            τ.II[i,j]  = τII_local
+            ε̇.xx[i,j]  = ε̇xx
+            ε̇.yy[i,j]  = ε̇yy
+            ε̇.II[i,j]  = sqrt(1/2*(ε̇xx^2 + ε̇yy^2) + ε̇xy^2)
+            λ̇.c[i,j]   = λ̇_local
+            η.c[i,j]   = η_local
+            ΔPt.c[i,j] = (τ_vec[4] - Pt[i,j])
         end
     end
 
-    # # for j=2:size(ε̇.xx,2)-1 
-    # #         i = 1
-    # #         @views 𝐷_ctl.c[i,j] .= -𝐷_ctl.c[2,j]
-    # #         @views 𝐷.c[i,j]     .= -𝐷.c[2,j]
-    # #         i = size(ε̇.xx,1)
-    # #         @views 𝐷_ctl.c[i,j] .= -𝐷_ctl.c[1,j]
-    # #         @views 𝐷.c[i,j]     .= -𝐷.c[1,j]
-    # # end
-
-    # # # For periodic cases
-    # if periodic_west
-    #     for j=2:size(ε̇.xx,2)-1 
+    # for j=2:size(ε̇.xx,2)-1 
     #         i = 1
-    #         @views 𝐷_ctl.c[i,j] .= 𝐷_ctl.c[end-1,j]
-    #         @views 𝐷.c[i,j]     .= 𝐷.c[end-1,j]
+    #         @views 𝐷_ctl.c[i,j] .= -𝐷_ctl.c[2,j]
+    #         @views 𝐷.c[i,j]     .= -𝐷.c[2,j]
     #         i = size(ε̇.xx,1)
-    #         @views 𝐷_ctl.c[i,j] .= 𝐷_ctl.c[2,j]
-    #         @views 𝐷.c[i,j]     .= 𝐷.c[2,j]
-    #     end
-    # end
-    # if periodic_south
-    #     for i=2:size(ε̇.xx,1)-1 
-    #         j = 1
-    #         @views 𝐷_ctl.c[i,j] .= 𝐷_ctl.c[i,end-1]
-    #         @views 𝐷.c[i,j]     .= 𝐷.c[i,end-1]
-    #         j = size(ε̇.xx,2)
-    #         @views 𝐷_ctl.c[i,j] .= 𝐷_ctl.c[i,2]
-    #         @views 𝐷.c[i,j]     .= 𝐷.c[i,2]
-    #     end
+    #         @views 𝐷_ctl.c[i,j] .= -𝐷_ctl.c[1,j]
+    #         @views 𝐷.c[i,j]     .= -𝐷.c[1,j]
     # end
 
-    # # @show "vertices"
+    # # For periodic cases
+    if periodic_west
+        for j=2:size(ε̇.xx,2)-1 
+            i = 1
+            @views 𝐷_ctl.c[i,j] .= 𝐷_ctl.c[end-1,j]
+            @views 𝐷.c[i,j]     .= 𝐷.c[end-1,j]
+            i = size(ε̇.xx,1)
+            @views 𝐷_ctl.c[i,j] .= 𝐷_ctl.c[2,j]
+            @views 𝐷.c[i,j]     .= 𝐷.c[2,j]
+        end
+    end
+    if periodic_south
+        for i=2:size(ε̇.xx,1)-1 
+            j = 1
+            @views 𝐷_ctl.c[i,j] .= 𝐷_ctl.c[i,end-1]
+            @views 𝐷.c[i,j]     .= 𝐷.c[i,end-1]
+            j = size(ε̇.xx,2)
+            @views 𝐷_ctl.c[i,j] .= 𝐷_ctl.c[i,2]
+            @views 𝐷.c[i,j]     .= 𝐷.c[i,2]
+        end
+    end
 
-    # # Loop over vertices
-    # for j=1+s:size(ε̇.xy,2)-s, i=1+s:size(ε̇.xy,1)-s
-    #     Vx     = SMatrix{3,2}(      V.x[ii,jj] for ii in i-1:i+1, jj in j:j+1  )
-    #     Vy     = SMatrix{2,3}(      V.y[ii,jj] for ii in i:i+1  , jj in j-1:j+1)
-    #     bcx    = SMatrix{3,2}(    BC.Vx[ii,jj] for ii in i-1:i+1, jj in j:j+1  )
-    #     bcy    = SMatrix{2,3}(    BC.Vy[ii,jj] for ii in i:i+1  , jj in j-1:j+1)
-    #     typex  = SMatrix{3,2}(  type.Vx[ii,jj] for ii in i-1:i+1, jj in j:j+1  )
-    #     typey  = SMatrix{2,3}(  type.Vy[ii,jj] for ii in i:i+1  , jj in j-1:j+1)
-    #     τxx0   = SMatrix{2,2}(    τ0.xx[ii,jj] for ii in i-1:i,   jj in j-1:j)
-    #     τyy0   = SMatrix{2,2}(    τ0.yy[ii,jj] for ii in i-1:i,   jj in j-1:j)
-    #     P      = SMatrix{2,2}(       Pt[ii,jj] for ii in i-1:i,   jj in j-1:j)
-    #     P0     = SMatrix{2,2}(       Pt0[ii,jj] for ii in i-1:i,   jj in j-1:j)
+    # @show "vertices"
 
-    #     # Apply BC's
-    #     Vx     = SetBCVx1(Vx, typex, bcx, Δ)
-    #     Vy     = SetBCVy1(Vy, typey, bcy, Δ)
+    # Loop over vertices
+    for j=1+s:size(ε̇.xy,2)-s, i=1+s:size(ε̇.xy,1)-s
+        Vx     = SMatrix{3,2}(      V.x[ii,jj] for ii in i-1:i+1, jj in j:j+1  )
+        Vy     = SMatrix{2,3}(      V.y[ii,jj] for ii in i:i+1  , jj in j-1:j+1)
+        bcx    = SMatrix{3,2}(    BC.Vx[ii,jj] for ii in i-1:i+1, jj in j:j+1  )
+        bcy    = SMatrix{2,3}(    BC.Vy[ii,jj] for ii in i:i+1  , jj in j-1:j+1)
+        typex  = SMatrix{3,2}(  type.Vx[ii,jj] for ii in i-1:i+1, jj in j:j+1  )
+        typey  = SMatrix{2,3}(  type.Vy[ii,jj] for ii in i:i+1  , jj in j-1:j+1)
+        τxx0   = SMatrix{2,2}(    τ0.xx[ii,jj] for ii in i-1:i,   jj in j-1:j)
+        τyy0   = SMatrix{2,2}(    τ0.yy[ii,jj] for ii in i-1:i,   jj in j-1:j)
+        P      = SMatrix{2,2}(       Pt[ii,jj] for ii in i-1:i,   jj in j-1:j)
+        P0     = SMatrix{2,2}(       Pt0[ii,jj] for ii in i-1:i,   jj in j-1:j)
 
-    #     # Interp Vy -> Vx, Vx - > Vy
-    #     V̄y = SMatrix{1,2}( av2D(Vy) )
-    #     V̄x = SMatrix{2,1}( av2D(Vy) )
+        # Apply BC's
+        Vx     = SetBCVx1(Vx, typex, bcx, Δ)
+        Vy     = SetBCVy1(Vy, typey, bcy, Δ)
 
-    #     # # More averages
-    #     τ0xx = av(τxx0)[1]
-    #     τ0yy = av(τyy0)[1]
-    #     τ0xy = τ0.xy[i,j]
-    #     P̄    = av(   P)[1]
-    #     P̄0   = av(  P0)[1]
+        # Interp Vy -> Vx, Vx - > Vy
+        V̄y = SMatrix{1,2}( av2D(Vy) )
+        V̄x = SMatrix{2,1}( av2D(Vy) )
 
-    #     # Velocity gradient - centroids
-    #     Dxx = (∂x(V̄x) * invΔx)[1]      
-    #     Dxy = (∂y(Vx) * invΔy)[2:end-1,:][1]                   
-    #     Dyy = (∂y(V̄y) * invΔy)[1]
-    #     Dyx = (∂x(Vy) * invΔx)[:,2:end-1][1]      
+        # # More averages
+        τ0xx = av(τxx0)[1]
+        τ0yy = av(τyy0)[1]
+        τ0xy = τ0.xy[i,j]
+        P̄    = av(   P)[1]
+        P̄0   = av(  P0)[1]
+
+        # Velocity gradient - centroids
+        Dxx = (∂x(V̄x) * invΔx)[1]      
+        Dxy = (∂y(Vx) * invΔy)[2:end-1,:][1]                   
+        Dyy = (∂y(V̄y) * invΔy)[1]
+        Dyx = (∂x(Vy) * invΔx)[:,2:end-1][1]      
         
-    #     # Deviatoric strain rate
-    #     ε̇xx, ε̇yy, ε̇xy, ε̇kk = deviatoric_strain_rate(Dxx, Dxy, Dyx, Dyy)
+        # Deviatoric strain rate
+        ε̇xx, ε̇yy, ε̇xy, ε̇kk = deviatoric_strain_rate(Dxx, Dxy, Dyx, Dyy)
         
-    #     # Effective visco-elastic strain rate
-    #     G       = materials.G[phases.v[i,j]]          
-    #     _2GΔt = inv(2 * G * Δ.t)
-    #     ϵ̇xx, ϵ̇yy, ϵ̇xy = effective_strain_rate(ε̇xx, ε̇yy, ε̇xy, τ0xx, τ0yy, τ0xy, _2GΔt)
-    #     ε̇vec  = @SVector([ϵ̇xx, ϵ̇yy, ϵ̇xy, P̄])
+        # Effective visco-elastic strain rate
+        G       = materials.G[phases.v[i,j]]          
+        _2GΔt = inv(2 * G * Δ.t)
+        ϵ̇xx, ϵ̇yy, ϵ̇xy = effective_strain_rate(ε̇xx, ε̇yy, ε̇xy, τ0xx, τ0yy, τ0xy, _2GΔt)
+        ε̇vec  = @SVector([ϵ̇xx, ϵ̇yy, ϵ̇xy, P̄])
 
-    #     # Tangent operator used for Newton Linearisation
-    #     stress_state, τ_vec, jac = ad_value_and_jacobian_first(StressVector!, ε̇vec, ε̇kk, P̄0, materials, phases.v[i,j], Δ)
-    #     _, η_local, λ̇_local, _ = stress_state
+        # Tangent operator used for Newton Linearisation
+         stress_state = StressVector!(ε̇vec, ε̇kk, Pt0[i,j], materials, phases.v[i,j], Δ)
+        τ_vec, jac = ad_jacobian_first(StressVector!, ε̇vec, ε̇kk, Pt0[i,j], materials, phases.v[i,j], Δ)
+        _, η_local, λ̇_local,  = stress_state
 
-    #     @views 𝐷_ctl.v[i,j] .= jac
+        @views 𝐷_ctl.v[i,j] .= jac
 
-    #     # Tangent operator used for Picard Linearisation
-    #     𝐷.v[i,j] .= diagm(2 * η_local * _ones)
-    #     𝐷.v[i,j][4,4] = 1
+        # Tangent operator used for Picard Linearisation
+        𝐷.v[i,j] .= diagm(2 * η_local * _ones)
+        𝐷.v[i,j][4,4] = 1
 
-    #     # Update stress
-    #     τ.xy[i,j] = τ_vec[3]
-    #     ε̇.xy[i,j] = ε̇xy
-    #     λ̇.v[i,j]  = λ̇_local
-    #     η.v[i,j]  = η_local
-    # end
+        # Update stress
+        τ.xy[i,j] = τ_vec[3]
+        ε̇.xy[i,j] = ε̇xy
+        λ̇.v[i,j]  = λ̇_local
+        η.v[i,j]  = η_local
+    end
 end
