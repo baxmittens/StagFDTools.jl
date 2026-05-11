@@ -15,11 +15,12 @@ using TimerOutputs
                           0  -1 ])
 
     # Material parameters
-    materials_properties     = initialize_materials( 3 )
-    materials_properties.η0 .= [1e2,    1e-1,  1e2 ]  
-    materials_properties.n  .= [3.0,    3.0,   1.0 ]
-    materials_properties.G  .= [1e20,   1e20,  1e20]
-    materials                = preprocess_materials( materials_properties )
+    nphases = 3
+    materials = initialize_materials(nphases)
+    materials.η0 .= [1e2,    1e-1,  1e2 ]  
+    materials.n  .= [3.0,    3.0,   1.0 ]
+    materials.G  .= [1e20,   1e20,  1e20]
+    preprocess!(materials)
 
     # Time steps
     Δt0   = 0.5
@@ -88,6 +89,9 @@ using TimerOutputs
     Vi      = (x  = zeros(size_x...), y  = zeros(size_y...))
     η       = (c  =  ones(size_c...), v  =  ones(size_v...) )
     ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
+    G       = (c  = zeros(size_c...), v  = zeros(size_v...))
+    β       = (c  = zeros(size_c...), v  = zeros(size_v...))
+    ρ       = (c  = zeros(size_c...), v  = zeros(size_v...))
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
     ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
     τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
@@ -130,13 +134,18 @@ using TimerOutputs
         BC.Vy[ end-1, iny_Vy] .= (type.Vy[ end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*xv[end] .+ D_BC[2,2]*yv)
     end
 
-    # Set material geometry 
+    # Set material geometry and phase ratios
     @views phases.c[inx_c, iny_c][(xc.^2 .+ (yc').^2) .<= 0.1^2] .= 2
     @views phases.v[inx_v, iny_v][(xv.^2 .+ (yv').^2) .<= 0.1^2] .= 2
     @views phases.v[[2,end-1], :] .= 3  # Use linear material along Neumann boundaries
     @views phases.v[:, [2,end-1]] .= 3  # Use linear material along Neumann boundaries
     @views phases.c[[2,end-1], :] .= 3  # Use linear material along Neumann boundaries
     @views phases.c[:, [2,end-1]] .= 3  # Use linear material along Neumann boundaries
+    phase_ratios = InitialisePhaseRatios(phases, nphases)
+    # phase_ratios = (
+    #     c   = phase_ratios.c[2:end-1,2:end-1],
+    #     v   = phase_ratios.v[2:end-1,2:end-1],
+    # )
 
     #--------------------------------------------#
 
@@ -161,6 +170,9 @@ using TimerOutputs
 
         iter = 0
 
+        # Compute bulk and shear moduli
+        compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, size_c, size_v, nphases)
+
         while iter<niter
 
             @printf("Iteration %04d\n", iter)
@@ -169,12 +181,10 @@ using TimerOutputs
             #--------------------------------------------#
             # Residual check        
             @timeit to "Residual" begin
-                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
-                @show extrema(λ̇.c)
-                @show extrema(λ̇.v)
-                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ) 
-                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
-                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
+                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
+                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, ξ, materials, number, type, BC, nc, Δ) 
+                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
             end
 
             err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
@@ -189,9 +199,9 @@ using TimerOutputs
             #--------------------------------------------#
             # Assembly
             @timeit to "Assembly" begin
-                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
+                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, ξ, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, ρ, materials, number, pattern, type, BC, nc, Δ)
             end
 
             #--------------------------------------------# 
@@ -212,7 +222,7 @@ using TimerOutputs
 
             #--------------------------------------------#
             # Line search & solution update
-            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
+            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, ξ, ρ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_ratios, nc, Δ)
             UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
 
         end
@@ -250,5 +260,5 @@ end
 
 
 let
-    main((x = 100, y = 100))
+    main((x = 200, y = 200))
 end

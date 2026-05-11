@@ -8,6 +8,7 @@ Base.@kwdef struct DruckerPrager <: AbstractPlasticity
     cosϕ::Vector{Float64} = Float64[]
     sinϕ::Vector{Float64} = Float64[]
     sinψ::Vector{Float64} = Float64[]
+    cosψ::Vector{Float64} = Float64[]
 end
 
 Base.@kwdef struct DruckerHyperbolic <: AbstractPlasticity
@@ -31,6 +32,7 @@ Base.@kwdef struct DruckerAniso <: AbstractPlasticity
     cosϕ::Vector{Float64} = Float64[]
     sinϕ::Vector{Float64} = Float64[]
     sinψ::Vector{Float64} = Float64[]
+    cosψ::Vector{Float64} = Float64[]
 end
 
 Base.@kwdef struct Tensile <: AbstractPlasticity
@@ -101,6 +103,7 @@ initialize(::Type{DruckerPrager}, n::Integer) = DruckerPrager(
     cosϕ=ones(n),
     sinϕ=ones(n),
     sinψ=ones(n),
+    cosψ=ones(n)
 )
 
 initialize(::Type{DruckerHyperbolic}, n::Integer) = DruckerHyperbolic(
@@ -124,6 +127,7 @@ initialize(::Type{DruckerAniso}, n::Integer) = DruckerAniso(
     cosϕ=ones(n),
     sinϕ=ones(n),
     sinψ=ones(n),
+    cosψ=ones(n)
 )
 
 initialize(::Type{Golchin2021}, n::Integer) = Golchin2021(
@@ -195,6 +199,7 @@ function preprocess!(dp::DruckerPrager)
     @. dp.cosϕ = cosd(dp.ϕ)
     @. dp.sinϕ = sind(dp.ϕ)
     @. dp.sinψ = sind(dp.ψ)
+    @. dp.cosψ = cosd(dp.ψ)
 end
 
 function preprocess!(dh::DruckerHyperbolic)

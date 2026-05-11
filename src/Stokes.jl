@@ -212,7 +212,7 @@ function SMomentum_x_Generic(Vx_loc, Vy_loc, Pt, ΔP, τ0, G_loc, 𝐷, material
     )
 
     # Residual
-    fx = (τxx[2] - τxx[1]) * invΔx
+    fx = (σxx[2] - σxx[1]) * invΔx
     fx += (τxy[2] - τxy[1]) * invΔy
     fx -= (Ptc[2] - Ptc[1]) * invΔx
     fx *= -1 * Δ.x * Δ.y
@@ -278,7 +278,7 @@ function SMomentum_y_Generic(Vx_loc, Vy_loc, Pt, ΔP, τ0, G_loc, ρ_loc, 𝐷, 
     )
 
     # Gravity
-    ρ = SVector{2}(ρ_loc.c[1, i] for i = 1:2)
+    ρ = SVector{2}(ρ_loc[1, i] for i = 1:2)
     ρg = materials.g[2] * 0.5 * (ρ[1] + ρ[2])
 
     # Residual
@@ -354,8 +354,8 @@ function AssembleMomentum2D_x!(K, V, P, P0, ΔP, τ0, 𝐷, G, materials, num, p
             bcy_loc = SMatrix{4,4}(BC.Vy[ii, jj] for ii in i-1:i+2, jj in j-2:j+1)
             typex_loc = SMatrix{3,3}(type.Vx[ii, jj] for ii in i-1:i+1, jj in j-1:j+1)
             typey_loc = SMatrix{4,4}(type.Vy[ii, jj] for ii in i-1:i+2, jj in j-2:j+1)
-            # Gc_loc     = SMatrix{2,1}(      G.c[ii,jj] for ii in i-1:i,   jj in j-1:j-1)
-            # Gv_loc     = SMatrix{1,2}(      G.v[ii,jj] for ii in i-0:i-0, jj in j-1:j-0)
+            Gc_loc = SMatrix{2,1}(G.c[ii, jj] for ii in i-1:i, jj in j-1:j-1)
+            Gv_loc = SMatrix{1,2}(G.v[ii, jj] for ii in i-0:i-0, jj in j-1:j-0)
 
             Vx_loc .= SMatrix{3,3}(V.x[ii, jj] for ii in i-1:i+1, jj in j-1:j+1)
             Vy_loc .= SMatrix{4,4}(V.y[ii, jj] for ii in i-1:i+2, jj in j-2:j+1)
@@ -370,17 +370,17 @@ function AssembleMomentum2D_x!(K, V, P, P0, ΔP, τ0, 𝐷, G, materials, num, p
             Dv = SMatrix{1,2}(𝐷.v[ii, jj] for ii in i-0:i-0, jj in j-1:j-0)
             bcv_loc = (x=bcx_loc, y=bcy_loc)
             type_loc = (x=typex_loc, y=typey_loc)
-            # G_loc      = (c=Gc_loc, v=Gv_loc)
+            G_loc = (c=Gc_loc, v=Gv_loc)
             D = (c=Dc, v=Dv)
             τ0_loc = (xx=τxx0, yy=τyy0, xy=τxy0)
 
             fill!(∂R∂Vx, 0e0)
             fill!(∂R∂Vy, 0e0)
             fill!(∂R∂Pt, 0e0)
-            ∂Vx, ∂Vy, ∂Pt = ad_partial_gradients(SMomentum_x_Generic, (Vx_loc, Vy_loc, P_loc), ΔP_loc, τ0_loc, D, materials, type_loc, bcv_loc, Δ)
-            ∂R∂Vx .= ∂Vx
-            ∂R∂Vy .= ∂Vy
-            ∂R∂Pt .= ∂Pt
+            ∂Vx, ∂Vy, ∂Pt = ad_partial_gradients(SMomentum_x_Generic, (Vx_loc, Vy_loc, P_loc), ΔP_loc, τ0_loc, G_loc, D, materials, type_loc, bcv_loc, Δ)
+            for I in eachindex(∂R∂Vx) ∂R∂Vx[I] = ∂Vx[I] end
+            for I in eachindex(∂R∂Vy) ∂R∂Vy[I] = ∂Vy[I] end
+            for I in eachindex(∂R∂Pt) ∂R∂Pt[I] = ∂Pt[I] end
             # Vx --- Vx
             Local = SMatrix{3,3}(num.Vx[ii, jj] for ii in i-1:i+1, jj in j-1:j+1) .* pattern[1][1]
             for jj in axes(Local, 2), ii in axes(Local, 1)
@@ -439,7 +439,7 @@ function ResidualMomentum2D_y!(R, V, P, P0, ΔP, τ0, 𝐷, G, ρ, materials, nu
     return nothing
 end
 
-function AssembleMomentum2D_y!(K, V, P, P0, ΔP, τ0, ρ, 𝐷, G, materials, num, pattern, type, BC, nc, Δ)
+function AssembleMomentum2D_y!(K, V, P, P0, ΔP, τ0, 𝐷, G, ρ, materials, num, pattern, type, BC, nc, Δ)
 
     ∂R∂Vy = @MMatrix zeros(3, 3)
     ∂R∂Vx = @MMatrix zeros(4, 4)
@@ -466,8 +466,8 @@ function AssembleMomentum2D_y!(K, V, P, P0, ΔP, τ0, ρ, 𝐷, G, materials, nu
             bcy_loc = @inline SMatrix{3,3}(@inbounds BC.Vy[ii, jj] for ii in i-1:i+1, jj in j-1:j+1)
             typex_loc = @inline SMatrix{4,4}(@inbounds type.Vx[ii, jj] for ii in i-2:i+1, jj in j-1:j+2)
             typey_loc = @inline SMatrix{3,3}(@inbounds type.Vy[ii, jj] for ii in i-1:i+1, jj in j-1:j+1)
-            # Gc_loc     = @inline SMatrix{1,2}(@inbounds      G.c[ii,jj] for ii in i-1:i-1, jj in j-1:j  )
-            # Gv_loc     = @inline SMatrix{2,1}(@inbounds      G.v[ii,jj] for ii in i-1:i-0, jj in j-0:j-0) 
+            Gc_loc = @inline SMatrix{1,2}(@inbounds G.c[ii, jj] for ii in i-1:i-1, jj in j-1:j)
+            Gv_loc = @inline SMatrix{2,1}(@inbounds G.v[ii, jj] for ii in i-1:i-0, jj in j-0:j-0)
             P_loc .= @inline SMatrix{3,2}(@inbounds P[ii, jj] for ii in i-2:i, jj in j-1:j)
             ΔP_loc .= @inline SMatrix{1,2}(@inbounds ΔP.c[ii, jj] for ii in i-1:i-1, jj in j-1:j)
             ρ_loc .= @inline SMatrix{1,2}(@inbounds ρ.c[ii, jj] for ii in i-1:i-1, jj in j-1:j)
@@ -478,17 +478,17 @@ function AssembleMomentum2D_y!(K, V, P, P0, ΔP, τ0, ρ, 𝐷, G, materials, nu
             Dv = @inline SMatrix{2,1}(@inbounds 𝐷.v[ii, jj] for ii in i-1:i-0, jj in j-0:j-0)
             bcv_loc = (x=bcx_loc, y=bcy_loc)
             type_loc = (x=typex_loc, y=typey_loc)
-            # G_loc      = (c=Gc_loc, v=Gv_loc)
+            G_loc = (c=Gc_loc, v=Gv_loc)
             D = (c=Dc, v=Dv)
             τ0_loc = (xx=τxx0, yy=τyy0, xy=τxy0)
 
             fill!(∂R∂Vx, 0.0)
             fill!(∂R∂Vy, 0.0)
             fill!(∂R∂Pt, 0.0)
-            ∂Vx, ∂Vy, ∂Pt = ad_partial_gradients(SMomentum_y_Generic, (Vx_loc, Vy_loc, P_loc), ΔP_loc, τ0_loc, ρ_loc, D, materials, type_loc, bcv_loc, Δ)
-            ∂R∂Vx .= ∂Vx
-            ∂R∂Vy .= ∂Vy
-            ∂R∂Pt .= ∂Pt
+            ∂Vx, ∂Vy, ∂Pt = ad_partial_gradients(SMomentum_y_Generic, (Vx_loc, Vy_loc, P_loc), ΔP_loc, τ0_loc, G_loc, ρ_loc, D, materials, type_loc, bcv_loc, Δ)
+            for I in eachindex(∂R∂Vx) ∂R∂Vx[I] = ∂Vx[I] end
+            for I in eachindex(∂R∂Vy) ∂R∂Vy[I] = ∂Vy[I] end
+            for I in eachindex(∂R∂Pt) ∂R∂Pt[I] = ∂Pt[I] end
 
             num_Vy = @inbounds num.Vy[i, j]
             bounds_Vy = num_Vy > 0
@@ -535,8 +535,8 @@ function ResidualContinuity2D!(R, V, P, P0, ΔP, τ0, 𝐷, β, ξ, materials, n
 
     for j in 2:size(R.p, 2)-1, i in 2:size(R.p, 1)-1
         if type.Pt[i, j] !== :constant
-            Vx_loc = SMatrix{3,2}(V.x[ii, jj] for ii in i:i+1, jj in j:j+2)
-            Vy_loc = SMatrix{2,3}(V.y[ii, jj] for ii in i:i+2, jj in j:j+1)
+            Vx_loc = SMatrix{2,3}(V.x[ii, jj] for ii in i:i+1, jj in j:j+2)
+            Vy_loc = SMatrix{3,2}(V.y[ii, jj] for ii in i:i+2, jj in j:j+1)
             bcv_loc = (;)
             type_loc = (;)
             D = (;)
@@ -881,11 +881,15 @@ function LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, 
         V.y .= Vi.y
         Pt .= Pti
         UpdateSolution!(V, Pt, α[i] .* dx, number, type, nc)
-        TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
-        ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, ξ, materials, number, type, BC, nc, Δ)
-        ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
-        ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
-        rvec[i] = @views norm(R.x[inx_Vx, iny_Vx]) / length(R.x[inx_Vx, iny_Vx]) + norm(R.y[inx_Vy, iny_Vy]) / length(R.y[inx_Vy, iny_Vy]) + 0 * norm(R.p[inx_c, iny_c]) / length(R.p[inx_c, iny_c])
+        try
+            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
+            ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, ξ, materials, number, type, BC, nc, Δ)
+            ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
+            ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
+            rvec[i] = @views norm(R.x[inx_Vx, iny_Vx]) / length(R.x[inx_Vx, iny_Vx]) + norm(R.y[inx_Vy, iny_Vy]) / length(R.y[inx_Vy, iny_Vy]) + 0 * norm(R.p[inx_c, iny_c]) / length(R.p[inx_c, iny_c])
+        catch
+            rvec[i] = Inf
+        end
     end
     imin = argmin(rvec)
     V.x .= Vi.x
@@ -945,7 +949,7 @@ function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0
             ε̇vec = @SVector([ϵ̇xx, ϵ̇yy, ϵ̇xy, Pt[i, j]])
 
             # Tangent operator used for Newton Linearisation
-            stress_state, τ_vec, jac = ad_value_and_jacobian_first(StressVector!, ε̇vec, Dkk[1], Pt0[i, j], materials, phase_ratios.c[i, j], Δ)
+            stress_state, τ_vec, jac = ad_value_and_jacobian_first(StressVector!, ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.c[i, j], Δ)
             _, η_local, λ̇_local, τII_local = stress_state
 
             @views 𝐷_ctl.c[i, j] .= jac
@@ -1041,7 +1045,7 @@ function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0
         ε̇vec = @SVector([ϵ̇xx, ϵ̇yy, ϵ̇xy, P̄])
 
         # Tangent operator used for Newton Linearisation
-        stress_state, τ_vec, jac = ad_value_and_jacobian_first(StressVector!, ε̇vec, ε̇kk, P̄0, materials, phase_ratio.v[i, j], Δ)
+        stress_state, τ_vec, jac = ad_value_and_jacobian_first(StressVector!, ε̇vec, ε̇kk, P̄0, materials, phase_ratios.v[i, j], Δ)
         _, η_local, λ̇_local, _ = stress_state
 
         @views 𝐷_ctl.v[i, j] .= jac

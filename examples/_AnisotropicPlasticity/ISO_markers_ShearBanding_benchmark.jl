@@ -217,10 +217,9 @@ end
     Vi      = (x  = zeros(size_x...), y  = zeros(size_y...))
     η       = (c  =  ones(size_c...), v  =  ones(size_v...) )
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
-    ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
+    ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...)  )
     τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
     τ       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
-    εII     = zeros(nc.x, nc.y)
     ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
     G       = (c  = zeros(size_c...), v  = zeros(size_v...))
     β       = (c  = zeros(size_c...), v  = zeros(size_v...))
@@ -281,11 +280,11 @@ end
             @warn "Invalid phase_ratios.center at $I: sum = $s, values = $(phase_ratios.center[I])"
         end
     end
-    # Cut ghost cells
-    phase_ratios = (
-        c   = phase_ratios.c[2:end-1,2:end-1],
-        v   = phase_ratios.v[2:end-1,2:end-1],
-    )
+    # # Cut ghost cells
+    # phase_ratios = (
+    #     c   = phase_ratios.c[2:end-1,2:end-1],
+    #     v   = phase_ratios.v[2:end-1,2:end-1],
+    # )
 
     #------------------------------------------------------------------#
 
@@ -350,7 +349,7 @@ end
             @timeit to "Assembly" begin
                 AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, ξ, materials, number, pattern, type, BC, nc, Δ)
                 AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, ρ, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, ρ, materials, number, pattern, type, BC, nc, Δ)
             end
 
             #--------------------------------------------# 
