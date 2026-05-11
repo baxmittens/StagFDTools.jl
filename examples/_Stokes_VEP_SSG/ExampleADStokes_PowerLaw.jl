@@ -3,13 +3,6 @@ import Statistics:mean
 using DifferentiationInterface
 using TimerOutputs
 
-function linear_tol(r, r0; ηmin=1e-10, ηmax=1e-1, α=0.7, c=0.5)
-
-    η = c * (r / r0)^α
-
-    return clamp(η, ηmin, ηmax)
-end
-
 @views function main(nc)
     #--------------------------------------------#
 
@@ -32,10 +25,14 @@ end
     Δt0   = 0.5
     nt    = 1
 
-    # Newton solver
-    niter = 20
-    ϵ_nl  = 1e-8
-    α     = LinRange(0.05, 1.0, 10)
+    # Solver parameters
+    niter   = 20    # max. number of non-linear iters
+    γ       = 1e5   # penalty viscosity
+    ϵ_l     = 1e-11 # linear solver tolerance
+    ϵ_nl    = 1e-8  # non-linear solver tolerance
+    inexact = false  # inexact Newton
+    solver  = :GCR  # :GCR or :PH
+    α       = LinRange(0.05, 1.0, 6)
 
     # Grid bounds
     inx_Vx, iny_Vx, inx_Vy, iny_Vy, inx_c, iny_c, inx_v, iny_v, size_x, size_y, size_c, size_v = Ranges(nc)
@@ -172,7 +169,7 @@ end
         τ0.xy .= τ.xy
         Pt0   .= Pt
 
-        @printf("Time step %04d\n", it)
+        @printf("Time step %04d (nthreads = %03d)\n", it, Threads.nthreads())
         iter, ϵ0, ϵ = 0, 0.0, 0.0
         niter = 10
 
@@ -196,8 +193,6 @@ end
             ϵ =  max(err.x[iter], err.y[iter])
             (iter == 1) && (ϵ0 = ϵ)
             ϵ < ϵ_nl ? break : nothing
-            @printf("Abs. res. = %02e --- Rel. res = %02e \n", ϵ, ϵ/ϵ0)
-
 
             #--------------------------------------------#
             # Set global residual vector
@@ -227,18 +222,13 @@ end
 
             #--------------------------------------------#
      
-            # Direct-iterative solver
-            # fu   = @views -r[1:size(𝐊,1)]
-            # fp   = @views -r[size(𝐊,1)+1:end]
-            # @time u, p = DecoupledSolver(𝐊, 𝐐, 𝐐ᵀ, 𝐏, fu, fp; fact=:lu,  ηb=1e5, niter_l=10, ϵ_l=1e-11)
-            # @views dx[1:size(𝐊,1)]     .= u
-            # @views dx[size(𝐊,1)+1:end] .= p
+            # Inexact Newton-Raphson
+            ϵ_l = inexact ? linear_tol(ϵ, ϵ0, iter; α=50) : ϵ_l
+            @printf("Abs. res. = %02e --- Rel. res = %02e  --- ϵ_l = %1.2e\n", ϵ, ϵ/ϵ0, ϵ_l)
 
-            𝐌 = [M.Vx.Vx M.Vx.Vy M.Vx.Pt; M.Vy.Vx M.Vy.Vy M.Vy.Pt; M.Pt.Vx M.Pt.Vy  M.Pt.Pt]
-            # ϵ_l = linear_tol(ϵ, ϵ0; ηmin=1e-3, ηmax=ϵ_nl, α=0.7, c=0.5)
-            ϵ_l = 1e-11
+            # Direct-iterative solver
             @timeit to "Linear solve" begin
-                KSP_GCR_Stokes!( dx, 𝐌, .-r, -1, 𝐊_PC, 𝐐, 𝐐ᵀ,  𝐏, ηb=1e5, ϵ_l=ϵ_l, restart=20 )
+                mechanical_solver!( dx, M, r, 𝐊, 𝐐, 𝐐ᵀ, 𝐏, 𝐊_PC; solver=solver, ηb=γ, ϵ_l=ϵ_l, niter_l=10, restart=20) 
             end
 
             #--------------------------------------------#

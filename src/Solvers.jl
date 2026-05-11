@@ -1,107 +1,35 @@
 using SparseArrays
 
-# @views function KSP_GCR_Stokes!( x, M, b, noisy, Kuu, Kup, Kpu, Kpp; ηb=1e3, ϵ_l=1e-9, restart = 25
-#  )
+function linear_tol(r, r0, iter; α=9)
+    # Inexact Newton-Raphson: Botti paper
+    if iter==1
+        return r/10
+    else
+        η = r0 / (r0 + α*(r0 - r))
+        return η * r
+    end
+end
 
-#     if nnz(Kpp) == 0 # incompressible limit
-#         𝐏inv  = ηb .* I(size(Kpp,1))
-#     else # compressible case
-#         𝐏inv  = spdiagm(1.0 ./diag(Kpp))
-#     end
-
-#     # KSP GCR solver
-#     norm_r, norm0 = 0.0, 0.0
-#     N         = length(x)
-#     maxit     = 1000
-#     ncyc, its = 0, 0
-#     i1, i2, success=0,0,0
-#     # Arrays for coupled problem
-#     f      = zeros(Float64, N)
-#     v      = zeros(Float64, N)
-#     s      = zeros(Float64, N)
-#     val    = zeros(Float64, restart)
-#     VV     = zeros(Float64, (restart,N))
-#     SS     = zeros(Float64, (restart,N))
-#     # Coupled
-#     # Initial residual
-#     f      = b - M*x 
-#     norm_r = norm(f)
-#     norm0  = norm_r;
-#     #
-#     ndofu = size(Kup,1)
-#     ndofp = size(Kup,2)
-#     Kuusc = Kuu - Kup*(𝐏inv*Kpu) # OK
-#     PC    =  0.5*(Kuusc + Kuusc') 
-#     t = @elapsed Kf    = cholesky(Hermitian(PC),check = false)
-#     @printf("Cholesky took = %02.2e s\n", t)
-#     # Arrays for decoupled problem
-#     su    = zeros(Float64, ndofu)
-#     fusc  = zeros(Float64, ndofu)
-#     sp    = zeros(Float64, ndofp)
-#     fu    = zeros(Float64, ndofu)
-#     fp    = zeros(Float64, ndofp)
-#     fu     .= f[1:ndofu]
-#     fp     .= f[ndofu+1:end]
-#     if (noisy > 1) @printf("       %1.4d KSP GCR Residual %1.12e %1.12e\n", 0, norm_r, norm_r/norm0); end
-#     # Solving procedure
-#     while ( success == 0 && its<maxit ) 
-#         for i1=1:restart
-#             # Apply preconditioner, s = PC^{-1} f
-#             # s = PC\f
-#             fusc .= fu  - Kup*(𝐏inv*fp + sp)
-#             su   .= Kf\fusc
-#             sp   .+= 𝐏inv*(fp - Kpu*su)
-#             s[1:ndofu]     .= su
-#             s[ndofu+1:end] .= sp
-#             # Action of Jacobian on s: v = J*s
-#             # JacobianAction!(v, M, s; r,kv,T,fc,TW,TE,dx,n)
-#             v .= M*s
-#             # Approximation of the Jv product
-#             for i2=1:i1
-#                 val[i2] = v' * VV[i2,:]
-#             end
-#             # Scaling
-#             for i2=1:i1
-#                 v .-= val[i2] * VV[i2,:]
-#                 s .-= val[i2] * SS[i2,:]
-#             end
-#             # -----------------
-#             r_dot_v = f'*v
-#             nrm     = norm(v)
-#             r_dot_v = r_dot_v / nrm
-#             # -----------------
-#             fact    = 1.0/nrm
-#             v     .*= fact
-#             s     .*= fact
-#             # -----------------
-#             fact    = r_dot_v;
-#             x     .+= fact*s
-#             f     .-= fact*v
-#             # -----------------
-#             norm_r  = norm(f) 
-#             fu     .= f[1:ndofu]
-#             fp     .= f[ndofu+1:end]
-#             @printf("  --> Powell-Hestenes Iteration %02d\n  Momentum res.   = %2.2e\n  Continuity res. = %2.2e\n", its, norm(fu)/sqrt(length(fu)), norm(fp)/sqrt(length(fp)))
-#             if norm(fu)/(length(fu)) < ϵ_l && norm(fp)/(length(fu)) < ϵ_l #(norm_r < eps * norm0 )
-#                 success = 1
-#                 println("converged")
-#                 break
-#             end
-#             # Store 
-#             VV[i1,:] .= v
-#             SS[i1,:] .= s
-#             its              += 1
-#         end
-#         its  += 1
-#         ncyc += 1
-#     end
-#     if (noisy>1) @printf("[%1.4d] %1.4d KSP GCR Residual %1.12e %1.12e\n", ncyc, its, norm_r, norm_r/norm0); end
-#     return its
-# end
+function mechanical_solver!( dx, M, r, 𝐊, 𝐐, 𝐐ᵀ, 𝐏, 𝐊_PC; 
+    solver=:PH, ηb=1e5, ϵ_l=1e-9, niter_l=10, restart=20, noisy=true
+    ) 
+    if solver == :PH
+        # Decoupled Powell & Hestenes using LU as PC
+        fu   = @views -r[1:size(𝐊,1)]
+        fp   = @views -r[size(𝐊,1)+1:end]
+        @time u, p = DecoupledSolver(𝐊, 𝐐, 𝐐ᵀ, 𝐏, fu, fp; fact=:lu, ηb=1e5, niter_l=10, ϵ_l=ϵ_l, noisy=true)
+        @views dx[1:size(𝐊,1)]     .= u
+        @views dx[size(𝐊,1)+1:end] .= p
+    elseif solver == :GCR
+        # Coupled GCR with Cholesky as PC
+        𝐌 = [M.Vx.Vx M.Vx.Vy M.Vx.Pt; M.Vy.Vx M.Vy.Vy M.Vy.Pt; M.Pt.Vx M.Pt.Vy  M.Pt.Pt]            
+        KSP_GCR_Stokes!( dx, 𝐌, .-r, 𝐊_PC, 𝐐, 𝐐ᵀ,  𝐏, ηb=1e5, ϵ_l=ϵ_l, restart=20 )
+    end
+end
 
 function KSP_GCR_Stokes!(
-    x, M, b, noisy, Kuu, Kup, Kpu, Kpp;
-    ηb      = 1e3, ϵ_l     = 1e-9, restart = 25, maxit   = 1000
+    x, M, b, Kuu, Kup, Kpu, Kpp;
+    ηb = 1e3, ϵ_l = 1e-9, restart = 25, maxit = 1000, noisy=true
 )
 
     @views begin
@@ -182,7 +110,7 @@ function KSP_GCR_Stokes!(
                 if norm(fu)/sqrt(ndofu) < ϵ_l &&
                    norm(fp)/sqrt(ndofp) < ϵ_l
 
-                    noisy > 0 && println("KSP converged in $its iterations")
+                    noisy && println("KSP converged in $its iterations")
                     return its
                 end
 
@@ -193,13 +121,13 @@ function KSP_GCR_Stokes!(
             end
         end
 
-        noisy > 0 && println("KSP failed after $its iterations")
+        noisy && println("KSP failed after $its iterations")
 
         return its
     end
 end
 
-function DecoupledSolver(𝐊, 𝐐, 𝐐ᵀ, 𝐏, fu, fp; fact=:chol,  ηb=1e3, niter_l=10, ϵ_l=1e-11, 𝐊_PC=I(size(𝐊,1)))
+function DecoupledSolver(𝐊, 𝐐, 𝐐ᵀ, 𝐏, fu, fp; fact=:chol,  ηb=1e3, niter_l=10, ϵ_l=1e-11, 𝐊_PC=I(size(𝐊,1)), noisy=true)
     
     if nnz(𝐏) == 0 # incompressible limit
         𝐏inv  = ηb .* I(size(𝐏,1))
@@ -235,7 +163,7 @@ function DecoupledSolver(𝐊, 𝐐, 𝐐ᵀ, 𝐏, fu, fp; fact=:chol,  ηb=1e3
         ru   .= fu .- 𝐊*u  .- 𝐐*p
         rp   .= fp .- 𝐐ᵀ*u .- 𝐏*p
         nrmu, nrmp = norm(ru), norm(rp)
-        @printf("  --> Powell-Hestenes Iteration %02d\n  Momentum res.   = %2.2e\n  Continuity res. = %2.2e\n", rit, nrmu/sqrt(length(ru)), nrmp/sqrt(length(rp)))
+        noisy && @printf("  --> Powell-Hestenes Iteration %02d\n  Momentum res.   = %2.2e\n  Continuity res. = %2.2e\n", rit, nrmu/sqrt(length(ru)), nrmp/sqrt(length(rp)))
         if nrmu/sqrt(length(ru)) < ϵ_l && nrmp/sqrt(length(rp)) < ϵ_l
             break
         end

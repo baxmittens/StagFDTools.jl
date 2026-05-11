@@ -354,7 +354,7 @@ end
 function AssembleMomentum2D_x!(K, V, P, P0, ΔP, τ0, 𝐷, phases, materials, num, pattern, type, BC, nc, Δ) 
 
     shift    = (x=1, y=2)
-    Threads.@threads for j in 1+shift.y:nc.y+shift.y 
+    for j in 1+shift.y:nc.y+shift.y 
         for i in 1+shift.x:nc.x+shift.x+1
         
             if type.Vx[i,j] == :in
@@ -454,7 +454,7 @@ function AssembleMomentum2D_y!(K, V, P, P0, ΔP, τ0, 𝐷, phases, materials, n
     K22 = K[2][2]
     K23 = K[2][3]
 
-    Threads.@threads for j in 1+shift.y:nc.y+shift.y+1 
+    for j in 1+shift.y:nc.y+shift.y+1 
         for i in 1+shift.x:nc.x+shift.x
 
             if type.Vy[i,j] === :in
@@ -547,7 +547,7 @@ end
 
 function AssembleContinuity2D!(K, V, P, Pt0, ΔP, τ0, 𝐷, phases, materials, num, pattern, type, BC, nc, Δ) 
                 
-    Threads.@threads for j in 2:size(P, 2)-1
+    for j in 2:size(P, 2)-1
         for i in 2:size(P, 1)-1
             Vx_loc     = SMatrix{2,3}(      V.x[ii,jj] for ii in i:i+1, jj in j:j+2)
             Vy_loc     = SMatrix{3,2}(      V.y[ii,jj] for ii in i:i+2, jj in j:j+1)
@@ -584,7 +584,7 @@ end
 @views function SparsityPattern!(K, num, pattern, nc) 
     ############ Fields Vx ############
     shift  = (x=1, y=2)
-    Threads.@threads for j in 1+shift.y:nc.y+shift.y 
+    for j in 1+shift.y:nc.y+shift.y 
         for i in 1+shift.x:nc.x+shift.x
             # Vx --- Vx
             Local = num.Vx[i-1:i+1,j-1:j+1] .* pattern[1][1]
@@ -638,7 +638,7 @@ end
     end
     # ############ Fields Pt ############
     shift  = (x=1, y=1)
-    Threads.@threads for j in 1+shift.y:nc.y+shift.y 
+    for j in 1+shift.y:nc.y+shift.y 
         for i in 1+shift.x:nc.x+shift.x
             # Pt --- Vx
             Local = num.Vx[i:i+1,j:j+2] .* pattern[3][1]
