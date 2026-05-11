@@ -32,13 +32,14 @@ using TimerOutputs
     nt    = 40
 
     # Newton solver
-    niter   = 20     # max. number of non-linear iters
-    γ       = 1e5    # penalty viscosity
-    ϵ_l     = 1e-11  # linear solver tolerance
-    ϵ_nl    = 1e-8   # non-linear solver tolerance
-    inexact = false  # inexact Newton
-    solver  = :PH    # :GCR or :PH
-    α       = LinRange(0.05, 1.0, 6)
+    niter    = 20     # max. number of non-linear iters
+    γ        = 1e5    # penalty viscosity
+    ϵ_l      = 1e-11  # linear solver tolerance
+    ϵ_nl     = 1e-8   # non-linear solver tolerance
+    inexact  = false  # inexact Newton
+    Pic2Newt = 1.3    # more than 1.0 - always Newton
+    solver   = :GCR   # :GCR or :PH
+    α        = LinRange(0.05, 1.0, 6)
 
     # Grid bounds
     inx_Vx, iny_Vx, inx_Vy, iny_Vy, inx_c, iny_c, inx_v, iny_v, size_x, size_y, size_c, size_v = Ranges(nc)
@@ -234,11 +235,16 @@ using TimerOutputs
      
             # Inexact Newton-Raphson
             ϵ_l = inexact ? linear_tol(ϵ, ϵ0, iter; α=50) : ϵ_l
-            @printf("Abs. res. = %02e --- Rel. res = %02e  --- ϵ_l = %1.2e\n", ϵ, ϵ/ϵ0, ϵ_l)
+            Newton = (ϵ/ϵ0 < Pic2Newt) ? true : false 
+            @printf("Abs. res. = %02e --- Rel. res = %02e  --- ϵ_l = %1.2e --- Newton = %01d\n", ϵ, ϵ/ϵ0, ϵ_l, Newton)
 
             # Direct-iterative solver
             @timeit to "Linear solve" begin
-                mechanical_solver!( dx, M, r, 𝐊, 𝐐, 𝐐ᵀ, 𝐏, 𝐊_PC, 𝐐_PC, 𝐐ᵀ_PC, 𝐏_PC; solver=solver, ηb=γ, ϵ_l=ϵ_l, niter_l=10, restart=20) 
+                if Newton
+                    mechanical_solver!( dx, M,    r, 𝐊,    𝐐,    𝐐ᵀ,    𝐏,    𝐊_PC, 𝐐_PC, 𝐐ᵀ_PC, 𝐏_PC; solver=solver, ηb=γ, ϵ_l=ϵ_l, niter_l=10, restart=20) 
+                else
+                    mechanical_solver!( dx, M_PC, r, 𝐊_PC, 𝐐_PC, 𝐐ᵀ_PC, 𝐏_PC, 𝐊_PC, 𝐐_PC, 𝐐ᵀ_PC, 𝐏_PC; solver=solver, ηb=γ, ϵ_l=ϵ_l, niter_l=10, restart=20) 
+                end
             end
 
             #--------------------------------------------#
