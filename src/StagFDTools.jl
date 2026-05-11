@@ -22,7 +22,7 @@ include("Utils.jl")
 export GenerateGrid, printxy, av2D
 
 include("Solvers.jl")
-export DecoupledSolver
+export DecoupledSolver, KSP_GCR_Stokes!, mechanical_solver!, linear_tol
 
 include("BCs.jl")
 export SetBCPf1, SetBCPt1, SetBCVx1, SetBCVy1
