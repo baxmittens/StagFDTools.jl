@@ -181,6 +181,8 @@ using TimerOutputs
         τ0.xy .= τ.xy
         Pt0   .= Pt
 
+        compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, size_c, size_v, nphases)
+
         @printf("Time step %04d (nthreads = %03d)\n", it, Threads.nthreads())
         iter, ϵ0, ϵ = 0, 0.0, 0.0
         niter = 10

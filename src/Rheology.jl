@@ -332,11 +332,10 @@ function LocalRheology(ε̇, Dkk, P0, materials, phase_ratios, Δ)
 
     nphases = length(materials.n)
     phase_avg = materials.phase_avg
-
-    eps0 = 0.0 * 1e-17
+    eps0 = 1e-17
 
     # Effective strain rate & pressure
-    ε̇II = sqrt.((ε̇[1]^2 + ε̇[2]^2 + (-ε̇[1] - ε̇[2])^2) / 2 + ε̇[3]^2) + eps0
+    ε̇II = sqrt((ε̇[1]^2 + ε̇[2]^2 + (-ε̇[1] - ε̇[2])^2) / 2 + ε̇[3]^2) + eps0
     P_trial = ε̇[4]
 
     η_average, λ̇_average, P_average, τ_average = 0.0, 0.0, 0.0, 0.0
