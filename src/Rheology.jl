@@ -235,7 +235,7 @@ function Kiss2023ReturnMapping(τ, P, η_ve, comp, β, Δt, C, φ, ψ, ηvp, σ_
     return τc, Pc, λ̇
 end
 
-function AnalyticalDPReturnMapping(τII:T, P, ηve, comp, β, Δt, C, cosϕ, sinϕ, sinψ, ηvp) where T
+function AnalyticalDPReturnMapping(τII, P, ηve, comp, β, Δt, C, cosϕ, sinϕ, sinψ, ηvp)
     λ̇ = zero(τII)
     F = τII - C * cosϕ - P * sinϕ - λ̇ * ηvp
     if F > 1e-10
@@ -248,7 +248,7 @@ function AnalyticalDPReturnMapping(τII:T, P, ηve, comp, β, Δt, C, cosϕ, sin
     return τII, P, λ̇
 end
 
-function TensileReturnMapping(τII::T, P, ηve, comp, β, Δt, σT, ηvp) where T
+function TensileReturnMapping(τII, P, ηve, comp, β, Δt, σT, ηvp)
     λ̇ = zero(T)
     F = τII - σT - P - λ̇ * ηvp
     if F > 1e-10
@@ -328,169 +328,12 @@ function PhaseAverage(a_average, averaging)
     return a_avg
 end
 
-function LocalRheology(ε̇, Dkk, P0, materials, phases, Δ)
-
-    eps0 = 0.0 * 1e-17
-
-    # Effective strain rate & pressure
-    ε̇II = sqrt.((ε̇[1]^2 + ε̇[2]^2 + (-ε̇[1] - ε̇[2])^2) / 2 + ε̇[3]^2) + eps0
-    P = ε̇[4]
-
-    # Parameters
-    ϵ = 1e-10 # tolerance
-    n = materials.n[phases]
-    η0 = materials.η0[phases]
-    B = materials.B[phases]
-    G = materials.G[phases]
-    C = materials.C[phases]
-
-    ϕ = materials.ϕ[phases]
-    ψ = materials.ψ[phases]
-
-    ηvp = materials.ηvp[phases]
-    cosψ = materials.sinψ[phases]
-    sinψ = materials.sinψ[phases]
-    sinϕ = materials.sinϕ[phases]
-    cosϕ = materials.cosϕ[phases]
-
-    β = materials.β[phases]
-    comp = materials.compressible
-
-    # Initial guess
-    η = (η0.*ε̇II .^ (1 ./ n.-1.0))[1]
-    ηvep = inv(1 / η + 1 / (G * Δ.t))
-    τII = 2 * ηvep * ε̇II
-
-    # Visco-elastic powerlaw
-    for it = 1:20
-        r = ε̇II - StrainRateTrial(τII, G, Δ.t, B, n)
-        # @show abs(r)
-        (abs(r) < ϵ) && break
-        ∂ε̇II∂τII = ad_derivative(StrainRateTrial, τII, G, Δ.t, B, n)
-        ∂τII∂ε̇II = inv(∂ε̇II∂τII)
-        τII += ∂τII∂ε̇II * r
-    end
-    isnan(τII) && error()
-
-    # Viscoplastic return mapping
-    λ̇ = zero(τII)
-    if materials.plasticity === :DruckerPrager
-        τII, P, λ̇ = DruckerPrager(τII, P, ηvep, comp, β, Δ.t, C, cosϕ, sinϕ, sinψ, ηvp)
-    elseif materials.plasticity === :tensile
-        τII, P, λ̇ = Tensile(τII, P, ηvep, comp, β, Δ.t, materials.σT[phases], ηvp)
-    elseif materials.plasticity === :Kiss2023
-        σT = materials.σT[phases]
-        τII, P, λ̇ = Kiss2023(τII, P, ηvep, comp, β, Δ.t, C, ϕ, ψ, ηvp, materials.σT[phases], materials.δσT[phases], materials.P1[phases], materials.τ1[phases], materials.P2[phases], materials.τ2[phases])
-    elseif materials.plasticity === :Hyperbolic
-        model = Hyperbolic()
-        σT = materials.σT[phases]
-        p = (C, cosϕ, sinϕ, cosψ, sinψ, σT, ηvp)
-        τII, P, λ̇ = NonLinearReturnMapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, p, model)
-    elseif materials.plasticity === :DruckerPrager1
-        model = DruckerPrager1()
-        p = (C, cosϕ, sinϕ, cosψ, sinψ, ηvp)
-        τII, P, λ̇ = NonLinearReturnMapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, p, model)
-    elseif materials.plasticity === :GolchinMCC
-        model = GolchinMCC()
-        Pt = -materials.σT[phases]
-        Pc = materials.Pc[phases]
-        a = materials.a[phases]
-        b = materials.b[phases]
-        c = materials.c[phases]
-        M = materials.M[phases]
-        N = materials.N[phases]
-        p = (M, N, Pt, Pc, a, b, c, ηvp)
-        τII, P, λ̇ = NonLinearReturnMapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, p, model)
-    end
-    # Effective viscosity
-    ηvep = τII / (2 * ε̇II)
-
-    return ηvep, λ̇, P, τII
-end
-
-function LocalRheology_div(ε̇, Dkk, P0, materials, phases, Δ)
-
-    eps0 = 0.0 * 1e-17
-
-    error()
-
-    # Effective strain rate & pressure
-    ε̇II = sqrt.((ε̇[1]^2 + ε̇[2]^2 + (-ε̇[1] - ε̇[2])^2) / 2 + ε̇[3]^2) + eps0
-    Dkk = ε̇[4]
-
-    # Parameters
-    ϵ = 1e-10 # tolerance
-    n = materials.n[phases]
-    η0 = materials.η0[phases]
-    B = materials.B[phases]
-    G = materials.G[phases]
-    C = materials.C[phases]
-
-    ϕ = materials.ϕ[phases]
-    ψ = materials.ψ[phases]
-
-    ηvp = materials.ηvp[phases]
-    cosψ = materials.sinψ[phases]
-    sinψ = materials.sinψ[phases]
-    sinϕ = materials.sinϕ[phases]
-    cosϕ = materials.cosϕ[phases]
-
-    β = materials.β[phases]
-    comp = materials.compressible
-
-    # Initial guess
-    η = (η0.*ε̇II .^ (1 ./ n.-1.0))[1]
-    ηvep = inv(1 / η + 1 / (G * Δ.t))
-    τII = 2 * ηvep * ε̇II
-    P = P0 - comp * Δ.t / β * Dkk
-
-    # Visco-elastic powerlaw
-    for it = 1:20
-        r = ε̇II - StrainRateTrial(τII, G, Δ.t, B, n)
-        # @show abs(r)
-        (abs(r) < ϵ) && break
-        ∂ε̇II∂τII = ad_derivative(StrainRateTrial, τII, G, Δ.t, B, n)
-        ∂τII∂ε̇II = inv(∂ε̇II∂τII)
-        τII += ∂τII∂ε̇II * r
-    end
-    isnan(τII) && error()
-
-    # Viscoplastic return mapping
-    λ̇ = 0.
-    if materials.plasticity === :DruckerPrager
-        τII, P, λ̇ = DruckerPrager(τII, P, ηvep, comp, β, Δ.t, C, cosϕ, sinϕ, sinψ, ηvp)
-    elseif materials.plasticity === :tensile
-        τII, P, λ̇ = Tensile(τII, P, ηvep, comp, β, Δ.t, materials.σT[phases], ηvp)
-    elseif materials.plasticity === :Kiss2023
-        σT = materials.σT[phases]
-        τII, P, λ̇ = Kiss2023(τII, P, ηvep, comp, β, Δ.t, C, ϕ, ψ, ηvp, materials.σT[phases], materials.δσT[phases], materials.P1[phases], materials.τ1[phases], materials.P2[phases], materials.τ2[phases])
-    elseif materials.plasticity === :Hyperbolic
-        model = Hyperbolic()
-        σT = materials.σT[phases]
-        p = (C, cosϕ, sinϕ, cosψ, sinψ, σT, ηvp)
-        τII, P, λ̇ = NonLinearReturnMapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, p, model)
-    elseif materials.plasticity === :DruckerPrager1
-        model = DruckerPrager1()
-        p = (C, cosϕ, sinϕ, cosψ, sinψ, ηvp)
-        τII, P, λ̇ = NonLinearReturnMapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, p, model)
-    elseif materials.plasticity === :GolchinMCC
-        model = GolchinMCC()
-        error("2")
-        # p = (C, cosϕ, sinϕ, cosψ, sinψ, ηvp)
-        # τII, P, λ̇ = NonLinearReturnMapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, p, model)
-    end
-    # Effective viscosity
-    ηvep = τII / (2 * ε̇II)
-
-    return ηvep, λ̇, P, τII
-end
-
-function LocalRheology_phase_ratios(ε̇, Dkk, P0, materials, phase_ratios, Δ)
+function LocalRheology(ε̇, Dkk, P0, materials, phase_ratios, Δ)
 
     nphases = length(materials.n)
     phase_avg = materials.phase_avg
 
-    eps0 = 1e-17
+    eps0 = 0.0 * 1e-17
 
     # Effective strain rate & pressure
     ε̇II = sqrt.((ε̇[1]^2 + ε̇[2]^2 + (-ε̇[1] - ε̇[2])^2) / 2 + ε̇[3]^2) + eps0
@@ -499,6 +342,8 @@ function LocalRheology_phase_ratios(ε̇, Dkk, P0, materials, phase_ratios, Δ)
     η_average, λ̇_average, P_average, τ_average = 0.0, 0.0, 0.0, 0.0
 
     for phases = 1:nphases
+
+        phase_ratios[phases] < eps() && continue
 
         P = P_trial
         # Parameters
@@ -550,6 +395,228 @@ function LocalRheology_phase_ratios(ε̇, Dkk, P0, materials, phase_ratios, Δ)
     return η_average, λ̇_average, P_average, τ_average
 end
 
+# function LocalRheology(ε̇, Dkk, P0, materials, phases, Δ)
+
+#     eps0 = 0.0 * 1e-17
+
+#     # Effective strain rate & pressure
+#     ε̇II = sqrt.((ε̇[1]^2 + ε̇[2]^2 + (-ε̇[1] - ε̇[2])^2) / 2 + ε̇[3]^2) + eps0
+#     P = ε̇[4]
+
+#     # Parameters
+#     ϵ = 1e-10 # tolerance
+#     n = materials.n[phases]
+#     η0 = materials.η0[phases]
+#     B = materials.B[phases]
+#     G = materials.G[phases]
+#     C = materials.C[phases]
+
+#     ϕ = materials.ϕ[phases]
+#     ψ = materials.ψ[phases]
+
+#     ηvp = materials.ηvp[phases]
+#     cosψ = materials.sinψ[phases]
+#     sinψ = materials.sinψ[phases]
+#     sinϕ = materials.sinϕ[phases]
+#     cosϕ = materials.cosϕ[phases]
+
+#     β = materials.β[phases]
+#     comp = materials.compressible
+
+#     # Initial guess
+#     η = (η0.*ε̇II .^ (1 ./ n.-1.0))[1]
+#     ηvep = inv(1 / η + 1 / (G * Δ.t))
+#     τII = 2 * ηvep * ε̇II
+
+#     # Visco-elastic powerlaw
+#     for it = 1:20
+#         r = ε̇II - StrainRateTrial(τII, G, Δ.t, B, n)
+#         # @show abs(r)
+#         (abs(r) < ϵ) && break
+#         ∂ε̇II∂τII = ad_derivative(StrainRateTrial, τII, G, Δ.t, B, n)
+#         ∂τII∂ε̇II = inv(∂ε̇II∂τII)
+#         τII += ∂τII∂ε̇II * r
+#     end
+#     isnan(τII) && error()
+
+#     # Viscoplastic return mapping
+#     λ̇ = zero(τII)
+#     if materials.plasticity === :DruckerPrager
+#         τII, P, λ̇ = DruckerPrager(τII, P, ηvep, comp, β, Δ.t, C, cosϕ, sinϕ, sinψ, ηvp)
+#     elseif materials.plasticity === :tensile
+#         τII, P, λ̇ = Tensile(τII, P, ηvep, comp, β, Δ.t, materials.σT[phases], ηvp)
+#     elseif materials.plasticity === :Kiss2023
+#         σT = materials.σT[phases]
+#         τII, P, λ̇ = Kiss2023(τII, P, ηvep, comp, β, Δ.t, C, ϕ, ψ, ηvp, materials.σT[phases], materials.δσT[phases], materials.P1[phases], materials.τ1[phases], materials.P2[phases], materials.τ2[phases])
+#     elseif materials.plasticity === :Hyperbolic
+#         model = Hyperbolic()
+#         σT = materials.σT[phases]
+#         p = (C, cosϕ, sinϕ, cosψ, sinψ, σT, ηvp)
+#         τII, P, λ̇ = NonLinearReturnMapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, p, model)
+#     elseif materials.plasticity === :DruckerPrager1
+#         model = DruckerPrager1()
+#         p = (C, cosϕ, sinϕ, cosψ, sinψ, ηvp)
+#         τII, P, λ̇ = NonLinearReturnMapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, p, model)
+#     elseif materials.plasticity === :GolchinMCC
+#         model = GolchinMCC()
+#         Pt = -materials.σT[phases]
+#         Pc = materials.Pc[phases]
+#         a = materials.a[phases]
+#         b = materials.b[phases]
+#         c = materials.c[phases]
+#         M = materials.M[phases]
+#         N = materials.N[phases]
+#         p = (M, N, Pt, Pc, a, b, c, ηvp)
+#         τII, P, λ̇ = NonLinearReturnMapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, p, model)
+#     end
+#     # Effective viscosity
+#     ηvep = τII / (2 * ε̇II)
+
+#     return ηvep, λ̇, P, τII
+# end
+
+# function LocalRheology_div(ε̇, Dkk, P0, materials, phases, Δ)
+
+#     eps0 = 0.0 * 1e-17
+
+#     error()
+
+#     # Effective strain rate & pressure
+#     ε̇II = sqrt.((ε̇[1]^2 + ε̇[2]^2 + (-ε̇[1] - ε̇[2])^2) / 2 + ε̇[3]^2) + eps0
+#     Dkk = ε̇[4]
+
+#     # Parameters
+#     ϵ = 1e-10 # tolerance
+#     n = materials.n[phases]
+#     η0 = materials.η0[phases]
+#     B = materials.B[phases]
+#     G = materials.G[phases]
+#     C = materials.C[phases]
+
+#     ϕ = materials.ϕ[phases]
+#     ψ = materials.ψ[phases]
+
+#     ηvp = materials.ηvp[phases]
+#     cosψ = materials.sinψ[phases]
+#     sinψ = materials.sinψ[phases]
+#     sinϕ = materials.sinϕ[phases]
+#     cosϕ = materials.cosϕ[phases]
+
+#     β = materials.β[phases]
+#     comp = materials.compressible
+
+#     # Initial guess
+#     η = (η0.*ε̇II .^ (1 ./ n.-1.0))[1]
+#     ηvep = inv(1 / η + 1 / (G * Δ.t))
+#     τII = 2 * ηvep * ε̇II
+#     P = P0 - comp * Δ.t / β * Dkk
+
+#     # Visco-elastic powerlaw
+#     for it = 1:20
+#         r = ε̇II - StrainRateTrial(τII, G, Δ.t, B, n)
+#         # @show abs(r)
+#         (abs(r) < ϵ) && break
+#         ∂ε̇II∂τII = ad_derivative(StrainRateTrial, τII, G, Δ.t, B, n)
+#         ∂τII∂ε̇II = inv(∂ε̇II∂τII)
+#         τII += ∂τII∂ε̇II * r
+#     end
+#     isnan(τII) && error()
+
+#     # Viscoplastic return mapping
+#     λ̇ = 0.
+#     if materials.plasticity === :DruckerPrager
+#         τII, P, λ̇ = DruckerPrager(τII, P, ηvep, comp, β, Δ.t, C, cosϕ, sinϕ, sinψ, ηvp)
+#     elseif materials.plasticity === :tensile
+#         τII, P, λ̇ = Tensile(τII, P, ηvep, comp, β, Δ.t, materials.σT[phases], ηvp)
+#     elseif materials.plasticity === :Kiss2023
+#         σT = materials.σT[phases]
+#         τII, P, λ̇ = Kiss2023(τII, P, ηvep, comp, β, Δ.t, C, ϕ, ψ, ηvp, materials.σT[phases], materials.δσT[phases], materials.P1[phases], materials.τ1[phases], materials.P2[phases], materials.τ2[phases])
+#     elseif materials.plasticity === :Hyperbolic
+#         model = Hyperbolic()
+#         σT = materials.σT[phases]
+#         p = (C, cosϕ, sinϕ, cosψ, sinψ, σT, ηvp)
+#         τII, P, λ̇ = NonLinearReturnMapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, p, model)
+#     elseif materials.plasticity === :DruckerPrager1
+#         model = DruckerPrager1()
+#         p = (C, cosϕ, sinϕ, cosψ, sinψ, ηvp)
+#         τII, P, λ̇ = NonLinearReturnMapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, p, model)
+#     elseif materials.plasticity === :GolchinMCC
+#         model = GolchinMCC()
+#         error("2")
+#         # p = (C, cosϕ, sinϕ, cosψ, sinψ, ηvp)
+#         # τII, P, λ̇ = NonLinearReturnMapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, p, model)
+#     end
+#     # Effective viscosity
+#     ηvep = τII / (2 * ε̇II)
+
+#     return ηvep, λ̇, P, τII
+# end
+
+# function LocalRheology_phase_ratios(ε̇, Dkk, P0, materials, phase_ratios, Δ)
+
+#     nphases = length(materials.n)
+#     phase_avg = materials.phase_avg
+
+#     eps0 = 1e-17
+
+#     # Effective strain rate & pressure
+#     ε̇II = sqrt.((ε̇[1]^2 + ε̇[2]^2 + (-ε̇[1] - ε̇[2])^2) / 2 + ε̇[3]^2) + eps0
+#     P_trial = ε̇[4]
+
+#     η_average, λ̇_average, P_average, τ_average = 0.0, 0.0, 0.0, 0.0
+
+#     for phases = 1:nphases
+
+#         P = P_trial
+#         # Parameters
+#         ϵ = 1e-10 # tolerance
+#         n = materials.n[phases]
+#         η0 = materials.η0[phases]
+#         B = materials.B[phases]
+#         G = materials.G[phases]
+#         β = materials.β[phases]
+#         comp = materials.compressible
+
+#         # Initial guess
+#         η = (η0.*ε̇II .^ (1 ./ n.-1.0))[1]
+#         ηvep = inv(1 / η + 1 / (G * Δ.t))
+#         τII = 2 * ηvep * ε̇II
+
+#         # Visco-elastic powerlaw
+#         for it = 1:20
+#             r = ε̇II - StrainRateTrial(τII, G, Δ.t, B, n)
+#             # @show abs(r)
+#             (abs(r) < ϵ) && break
+#             ∂ε̇II∂τII = ad_derivative(StrainRateTrial, τII, G, Δ.t, B, n)
+#             ∂τII∂ε̇II = inv(∂ε̇II∂τII)
+#             τII += ∂τII∂ε̇II * r
+#         end
+#         isnan(τII) && error()
+
+#         # ηvep for analytical solution
+#         ηvep = τII / 2 / ε̇II
+
+#         # Viscoplastic return mapping
+#         τII, P, λ̇ = return_mapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, comp, materials.plasticity, phases)
+
+#         # Effective viscosity
+#         ηvep = τII / (2 * ε̇II)
+
+#         # Phase averaging
+#         η_average += PhaseAverage_summand(ηvep, phase_ratios[phases], phase_avg)
+#         P_average += PhaseAverage_summand(P, phase_ratios[phases], phase_avg)
+#         λ̇_average += PhaseAverage_summand(λ̇, phase_ratios[phases], phase_avg)
+#         τ_average += PhaseAverage_summand(τII, phase_ratios[phases], phase_avg)
+#     end
+
+#     η_average = PhaseAverage(η_average, phase_avg)
+#     P_average = PhaseAverage(P_average, phase_avg)
+#     λ̇_average = PhaseAverage(λ̇_average, phase_avg)
+#     τ_average = PhaseAverage(τ_average, phase_avg)
+
+#     return η_average, λ̇_average, P_average, τ_average
+# end
+
 # function LocalRheology_div(ε̇, Dkk, P0, materials, phases, Δ)
 
 #     eps0 = 0.0 * 1e-17
@@ -599,8 +666,17 @@ end
 # end
 
 # Stress Vector ----------------------------------------------
-function StressVector!(ε̇, Dkk, P0, materials, phases::Integer, Δ)
-    η, λ̇, P, τII = LocalRheology(ε̇, Dkk, P0, materials, phases, Δ)
+# function StressVector!(ε̇, Dkk, P0, materials, phases::Integer, Δ)
+#     η, λ̇, P, τII = LocalRheology(ε̇, Dkk, P0, materials, phases, Δ)
+#     τ = @SVector([2 * η * ε̇[1],
+#         2 * η * ε̇[2],
+#         2 * η * ε̇[3],
+#         P])
+#     return τ, η, λ̇, τII
+# end
+
+function StressVector!(ε̇, ε̇kk, P0, materials, phase_ratios, Δ)
+    η, λ̇, P, τII = LocalRheology(ε̇, ε̇kk, P0, materials, phase_ratios, Δ)
     τ = @SVector([2 * η * ε̇[1],
         2 * η * ε̇[2],
         2 * η * ε̇[3],
@@ -608,23 +684,14 @@ function StressVector!(ε̇, Dkk, P0, materials, phases::Integer, Δ)
     return τ, η, λ̇, τII
 end
 
-function StressVector!(ε̇, Dkk, P0, materials, phase_ratios::AbstractVector, Δ)
-    η, λ̇, P, τII = LocalRheology(ε̇, Dkk, P0, materials, phase_ratios, Δ)
-    τ = @SVector([2 * η * ε̇[1],
-        2 * η * ε̇[2],
-        2 * η * ε̇[3],
-        P])
-    return τ, η, λ̇, τII
-end
-
-function StressVector_div!(ε̇, Dkk, P0, materials, phases, Δ)
-    η, λ̇, P, τII = LocalRheology_div(ε̇, Dkk, P0, materials, phases, Δ)
-    τ = @SVector([2 * η * ε̇[1],
-        2 * η * ε̇[2],
-        2 * η * ε̇[3],
-        P])
-    return τ, η, λ̇, τII
-end
+# function StressVector_div!(ε̇, Dkk, P0, materials, phases, Δ)
+#     η, λ̇, P, τII = LocalRheology_div(ε̇, Dkk, P0, materials, phases, Δ)
+#     τ = @SVector([2 * η * ε̇[1],
+#         2 * η * ε̇[2],
+#         2 * η * ε̇[3],
+#         P])
+#     return τ, η, λ̇, τII
+# end
 
 LocalRheology_phase_ratios(args...) = LocalRheology(args...)
 StressVector_phase_ratios!(args...) = StressVector!(args...)
