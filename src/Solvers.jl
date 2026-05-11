@@ -1,6 +1,133 @@
 using SparseArrays
 
-function DecoupledSolver(𝐊, 𝐐, 𝐐ᵀ, 𝐏, fu, fp; fact=:chol,  ηb=1e3, niter_l=10, ϵ_l=1e-11, 𝐊_PC=I(size(𝐊,1)))
+function linear_tol(r, r0, iter; α=9)
+    # Inexact Newton-Raphson: Botti paper
+    if iter==1
+        return r/10
+    else
+        η = r0 / (r0 + α*(r0 - r))
+        return η * r
+    end
+end
+
+function mechanical_solver!( dx, M, r, 𝐊, 𝐐, 𝐐ᵀ, 𝐏, 𝐊_PC; 
+    solver=:PH, ηb=1e5, ϵ_l=1e-9, niter_l=10, restart=20, noisy=true
+    ) 
+    if solver == :PH
+        # Decoupled Powell & Hestenes using LU as PC
+        fu   = @views -r[1:size(𝐊,1)]
+        fp   = @views -r[size(𝐊,1)+1:end]
+        @time u, p = DecoupledSolver(𝐊, 𝐐, 𝐐ᵀ, 𝐏, fu, fp; fact=:lu, ηb=1e5, niter_l=10, ϵ_l=ϵ_l, noisy=true)
+        @views dx[1:size(𝐊,1)]     .= u
+        @views dx[size(𝐊,1)+1:end] .= p
+    elseif solver == :GCR
+        # Coupled GCR with Cholesky as PC
+        𝐌 = [M.Vx.Vx M.Vx.Vy M.Vx.Pt; M.Vy.Vx M.Vy.Vy M.Vy.Pt; M.Pt.Vx M.Pt.Vy  M.Pt.Pt]            
+        KSP_GCR_Stokes!( dx, 𝐌, .-r, 𝐊_PC, 𝐐, 𝐐ᵀ,  𝐏, ηb=1e5, ϵ_l=ϵ_l, restart=20 )
+    end
+end
+
+function KSP_GCR_Stokes!(
+    x, M, b, Kuu, Kup, Kpu, Kpp;
+    ηb = 1e3, ϵ_l = 1e-9, restart = 25, maxit = 1000, noisy=true
+)
+
+    @views begin
+
+        Kuu = sparse(Kuu)
+        Kup = sparse(Kup)
+        Kpu = sparse(Kpu)
+        Kpp = sparse(Kpp)
+        M   = sparse(M)
+
+        ndofu = size(Kup,1)
+        ndofp = size(Kup,2)
+        N     = length(x)
+
+        Pinv = nnz(Kpp) == 0 ? fill(ηb, ndofp) : 1.0 ./ diag(Kpp)
+
+        Kuusc = Kuu - Kup * spdiagm(Pinv) * Kpu
+        Kf    = cholesky(Hermitian(Kuusc), check=false)
+
+        f = similar(x)
+        s = similar(x)
+        v = similar(x)
+
+        mul!(f, M, x)
+        @. f = b - f
+
+        norm0 = norm(f)
+
+        fu = f[1:ndofu]
+        fp = f[ndofu+1:end]
+
+        su = s[1:ndofu]
+        sp = s[ndofu+1:end]
+
+        VV  = zeros(eltype(x), N, restart)
+        SS  = zeros(eltype(x), N, restart)
+
+        tmpu = zeros(eltype(x), ndofu)
+        tmpp = zeros(eltype(x), ndofp)
+        fusc = zeros(eltype(x), ndofu)
+
+        its = 0
+
+        while its < maxit
+
+            for k = 1:restart
+
+                fill!(s, 0.0)
+                @. tmpp = Pinv * fp
+
+                mul!(tmpu, Kup, tmpp)
+                @. fusc = fu - tmpu
+
+                ldiv!(su, Kf, fusc)
+
+                mul!(tmpp, Kpu, su)
+
+                @. sp += Pinv * (fp - tmpp)
+
+                mul!(v, M, s)   
+
+                for j = 1:k-1
+                    hj = dot(v, VV[:,j])
+                    BLAS.axpy!(-hj, VV[:,j], v)
+                    BLAS.axpy!(-hj, SS[:,j], s)
+                end
+
+                nrm = norm(v)
+
+                @. v /= nrm
+                @. s /= nrm
+
+                α = dot(f, v)
+
+                BLAS.axpy!( α, s, x)
+                BLAS.axpy!(-α, v, f)
+
+                if norm(fu)/sqrt(ndofu) < ϵ_l &&
+                   norm(fp)/sqrt(ndofp) < ϵ_l
+
+                    noisy && println("KSP converged in $its iterations")
+                    return its
+                end
+
+                copyto!(VV[:,k], v)
+                copyto!(SS[:,k], s)
+
+                its += 1
+            end
+        end
+
+        noisy && println("KSP failed after $its iterations")
+
+        return its
+    end
+end
+
+function DecoupledSolver(𝐊, 𝐐, 𝐐ᵀ, 𝐏, fu, fp; fact=:chol,  ηb=1e3, niter_l=10, ϵ_l=1e-11, 𝐊_PC=I(size(𝐊,1)), noisy=true)
     
     if nnz(𝐏) == 0 # incompressible limit
         𝐏inv  = ηb .* I(size(𝐏,1))
@@ -36,7 +163,7 @@ function DecoupledSolver(𝐊, 𝐐, 𝐐ᵀ, 𝐏, fu, fp; fact=:chol,  ηb=1e3
         ru   .= fu .- 𝐊*u  .- 𝐐*p
         rp   .= fp .- 𝐐ᵀ*u .- 𝐏*p
         nrmu, nrmp = norm(ru), norm(rp)
-        @printf("  --> Powell-Hestenes Iteration %02d\n  Momentum res.   = %2.2e\n  Continuity res. = %2.2e\n", rit, nrmu/sqrt(length(ru)), nrmp/sqrt(length(rp)))
+        noisy && @printf("  --> Powell-Hestenes Iteration %02d\n  Momentum res.   = %2.2e\n  Continuity res. = %2.2e\n", rit, nrmu/sqrt(length(ru)), nrmp/sqrt(length(rp)))
         if nrmu/sqrt(length(ru)) < ϵ_l && nrmp/sqrt(length(rp)) < ϵ_l
             break
         end

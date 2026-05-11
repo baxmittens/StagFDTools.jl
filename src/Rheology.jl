@@ -15,7 +15,7 @@ end
 function Kiss2023(τ, P, η_ve, comp, β, Δt, C, φ, ψ, ηvp, σ_T, δσ_T, pc1, τc1, pc2, τc2)
 
     K         = 1/β
-    λ̇         = 0.
+    λ̇         = zero(τ)
     domain_pl = 0.0
     Pc        = P
     τc        = τ
@@ -176,7 +176,7 @@ end
 function NonLinearReturnMapping(τII, P, ε̇_eff, Dkk, P0, ηve, β, Δt, plastic, model)
     
     tol     = 1e-5
-    λ̇       = 0.0
+    λ̇       = zero(τII)
     K       = 1/β
     τ_trial = τII
     P_trial = P
@@ -243,8 +243,8 @@ function NonLinearReturnMapping(τII, P, ε̇_eff, Dkk, P0, ηve, β, Δt, plast
     return x[1], x[2], x[3]
 end
 
-function DruckerPrager(τII, P, ηve, comp, β, Δt, C, cosϕ, sinϕ, sinψ, ηvp)
-    λ̇    = 0.0
+function DruckerPrager(τII::T, P, ηve, comp, β, Δt, C, cosϕ, sinϕ, sinψ, ηvp) where T
+    λ̇ = zero(τII)
     F    = τII - C*cosϕ - P*sinϕ - λ̇*ηvp
     if F > 1e-10
         λ̇    = F / (ηve + ηvp + comp*Δt/β*sinϕ*sinψ) 
@@ -257,8 +257,8 @@ function DruckerPrager(τII, P, ηve, comp, β, Δt, C, cosϕ, sinϕ, sinψ, ηv
     return τII, P, λ̇
 end
 
-function Tensile(τII, P, ηve, comp, β, Δt, σT, ηvp)
-    λ̇    = 0.0
+function Tensile(τII::T, P, ηve, comp, β, Δt, σT, ηvp) where T
+    λ̇ = zero(T)
     F    = τII - σT - P - λ̇*ηvp
     if F > 1e-10
         λ̇    = F / (ηve + ηvp + comp*Δt/β) 
@@ -352,7 +352,7 @@ function LocalRheology(ε̇, Dkk, P0, materials, phases, Δ)
     isnan(τII) && error()
  
     # Viscoplastic return mapping
-    λ̇ = 0.
+    λ̇ = zero(τII)
     if materials.plasticity === :DruckerPrager
         τII, P, λ̇ = DruckerPrager(τII, P, ηvep, comp, β, Δ.t, C, cosϕ, sinϕ, sinψ, ηvp)
     elseif materials.plasticity === :tensile
@@ -380,6 +380,8 @@ function LocalRheology(ε̇, Dkk, P0, materials, phases, Δ)
         N    = materials.N[phases]
         p    = (M, N, Pt, Pc, a, b, c, ηvp)
         τII, P, λ̇ = NonLinearReturnMapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δ.t, p, model)
+    else
+        τII, P, λ̇
     end
     # Effective viscosity
     ηvep = τII/(2*ε̇II)

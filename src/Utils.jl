@@ -1,6 +1,24 @@
 printxy(x) = display( rotr90(x[end:-1:1,end:-1:1]) )
 av2D(x) = @views @. 0.25*(x[1:end-1,1:end-1] + x[2:end-0,1:end-1,] + x[1:end-1,2:end-0] + x[2:end-0,2:end-0])
 
+@inline function av2D(x::SMatrix{M,N,T}) where {M,N,T}
+
+    SMatrix{M-1,N-1,T}(ntuple(k -> begin
+
+        i = (k - 1) % (M - 1) + 1
+        j = (k - 1) ÷ (M - 1) + 1
+
+        @inbounds 0.25 * (
+            x[i, j] +
+            x[i+1, j] +
+            x[i, j+1] +
+            x[i+1, j+1]
+        )
+
+    end, (M-1)*(N-1)))
+end
+
+
 @views function GenerateGrid(x, y, Δ, nc)
 
     X = (

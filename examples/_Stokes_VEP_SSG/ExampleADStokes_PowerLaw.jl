@@ -25,10 +25,14 @@ using TimerOutputs
     Δt0   = 0.5
     nt    = 1
 
-    # Newton solver
-    niter = 20
-    ϵ_nl  = 1e-8
-    α     = LinRange(0.05, 1.0, 10)
+    # Solver parameters
+    niter   = 20    # max. number of non-linear iters
+    γ       = 1e5   # penalty viscosity
+    ϵ_l     = 1e-11 # linear solver tolerance
+    ϵ_nl    = 1e-8  # non-linear solver tolerance
+    inexact = false  # inexact Newton
+    solver  = :GCR  # :GCR or :PH
+    α       = LinRange(0.05, 1.0, 6)
 
     # Grid bounds
     inx_Vx, iny_Vx, inx_Vy, iny_Vy, inx_c, iny_c, inx_v, iny_v, size_x, size_y, size_c, size_v = Ranges(nc)
@@ -70,12 +74,18 @@ using TimerOutputs
         Fields(ExtendableSparseMatrix(nVy, nVx), ExtendableSparseMatrix(nVy, nVy), ExtendableSparseMatrix(nVy, nPt)), 
         Fields(ExtendableSparseMatrix(nPt, nVx), ExtendableSparseMatrix(nPt, nVy), ExtendableSparseMatrix(nPt, nPt))
     )
-    𝐊  = ExtendableSparseMatrix(nVx + nVy, nVx + nVy)
-    𝐐  = ExtendableSparseMatrix(nVx + nVy, nPt)
-    𝐐ᵀ = ExtendableSparseMatrix(nPt, nVx + nVy)
-    𝐏  = ExtendableSparseMatrix(nPt, nPt)
-    dx = zeros(nVx + nVy + nPt)
-    r  = zeros(nVx + nVy + nPt)
+    M_PC = Fields(
+        Fields(ExtendableSparseMatrix(nVx, nVx), ExtendableSparseMatrix(nVx, nVy), ExtendableSparseMatrix(nVx, nPt)), 
+        Fields(ExtendableSparseMatrix(nVy, nVx), ExtendableSparseMatrix(nVy, nVy), ExtendableSparseMatrix(nVy, nPt)), 
+        Fields(ExtendableSparseMatrix(nPt, nVx), ExtendableSparseMatrix(nPt, nVy), ExtendableSparseMatrix(nPt, nPt))
+    )
+    𝐊    = ExtendableSparseMatrix(nVx + nVy, nVx + nVy)
+    𝐊_PC = ExtendableSparseMatrix(nVx + nVy, nVx + nVy)
+    𝐐    = ExtendableSparseMatrix(nVx + nVy, nPt)
+    𝐐ᵀ   = ExtendableSparseMatrix(nPt, nVx + nVy)
+    𝐏    = ExtendableSparseMatrix(nPt, nPt)
+    dx   = zeros(nVx + nVy + nPt)
+    r    = zeros(nVx + nVy + nPt)
 
     #--------------------------------------------#
     # Intialise field
@@ -159,19 +169,19 @@ using TimerOutputs
         τ0.xy .= τ.xy
         Pt0   .= Pt
 
-        iter = 0
+        @printf("Time step %04d (nthreads = %03d)\n", it, Threads.nthreads())
+        iter, ϵ0, ϵ = 0, 0.0, 0.0
+        niter = 10
 
-        while iter<niter
+        @time while iter<niter
 
-            @printf("Iteration %04d\n", iter)
             iter +=1
+            @printf("Iteration %04d\n", iter)
 
             #--------------------------------------------#
             # Residual check        
             @timeit to "Residual" begin
                 TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
-                @show extrema(λ̇.c)
-                @show extrema(λ̇.v)
                 ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ) 
                 ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
                 ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
@@ -180,7 +190,9 @@ using TimerOutputs
             err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
             err.y[iter] = @views norm(R.y[inx_Vy,iny_Vy])/sqrt(nVy)
             err.p[iter] = @views norm(R.p[inx_c,iny_c])/sqrt(nPt)
-            max(err.x[iter], err.y[iter]) < ϵ_nl ? break : nothing
+            ϵ =  max(err.x[iter], err.y[iter])
+            (iter == 1) && (ϵ0 = ϵ)
+            ϵ < ϵ_nl ? break : nothing
 
             #--------------------------------------------#
             # Set global residual vector
@@ -189,9 +201,14 @@ using TimerOutputs
             #--------------------------------------------#
             # Assembly
             @timeit to "Assembly" begin
+                # Jacobian
                 AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
                 AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
                 AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
+                # Preconditioner
+                AssembleContinuity2D!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_x!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, pattern, type, BC, nc, Δ)
             end
 
             #--------------------------------------------# 
@@ -200,19 +217,25 @@ using TimerOutputs
             𝐐  .= [M.Vx.Pt; M.Vy.Pt]
             𝐐ᵀ .= [M.Pt.Vx M.Pt.Vy]
             𝐏  .= M.Pt.Pt
+            # Picard preconditioner
+            𝐊_PC  .= [M_PC.Vx.Vx M_PC.Vx.Vy; M_PC.Vy.Vx M_PC.Vy.Vy]
 
             #--------------------------------------------#
      
+            # Inexact Newton-Raphson
+            ϵ_l = inexact ? linear_tol(ϵ, ϵ0, iter; α=50) : ϵ_l
+            @printf("Abs. res. = %02e --- Rel. res = %02e  --- ϵ_l = %1.2e\n", ϵ, ϵ/ϵ0, ϵ_l)
+
             # Direct-iterative solver
-            fu   = @views -r[1:size(𝐊,1)]
-            fp   = @views -r[size(𝐊,1)+1:end]
-            u, p = DecoupledSolver(𝐊, 𝐐, 𝐐ᵀ, 𝐏, fu, fp; fact=:lu,  ηb=1e5, niter_l=10, ϵ_l=1e-11)
-            @views dx[1:size(𝐊,1)]     .= u
-            @views dx[size(𝐊,1)+1:end] .= p
+            @timeit to "Linear solve" begin
+                mechanical_solver!( dx, M, r, 𝐊, 𝐐, 𝐐ᵀ, 𝐏, 𝐊_PC; solver=solver, ηb=γ, ϵ_l=ϵ_l, niter_l=10, restart=20) 
+            end
 
             #--------------------------------------------#
             # Line search & solution update
-            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
+            @timeit to "Line search" begin
+                imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
+            end
             UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
 
         end
@@ -250,5 +273,5 @@ end
 
 
 let
-    main((x = 100, y = 100))
+    main((x = 200, y = 200))
 end

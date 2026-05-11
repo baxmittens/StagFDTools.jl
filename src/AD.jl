@@ -1,6 +1,7 @@
 using DifferentiationInterface
 
 const AUTO_DIFF_BACKEND = AutoForwardDiff()
+export ad_jacobian_first, gradient, AUTO_DIFF_BACKEND
 
 struct ConstArg{T}
     value::T
@@ -29,15 +30,20 @@ Duplicated(x, grad) = DuplicatedArg(x, grad)
     return ntuple(i -> i == idx ? x : xs[i], length(xs))
 end
 
-function ad_partial_gradients(f, xs::Tuple, args...)
+function ad_partial_gradients(f::F, xs::Tuple, args...) where F
     promoted_xs = map(_ad_promote_arg, xs)
     return ntuple(i -> gradient(x -> f(_replace_tuple_entry(promoted_xs, i, x)..., args...), AUTO_DIFF_BACKEND, promoted_xs[i]), length(xs))
 end
 
-function ad_value_and_jacobian_first(f, x, args...)
+function ad_value_and_jacobian_first(f::F, x, args...) where F
     full_value = f(x, args...)
     first_value, jac = value_and_jacobian(z -> first(f(z, args...)), AUTO_DIFF_BACKEND, x)
-    return full_value, first_value, jac
+    return first_value, jac
+end
+
+function ad_jacobian_first(f::F, x, args...) where F
+    first_value, jac = value_and_jacobian(z -> first(f(z, args...)), AUTO_DIFF_BACKEND, x)
+    return first_value, jac
 end
 
 ad_unwrap(x) = _ad_promote_arg(x)
