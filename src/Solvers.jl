@@ -10,7 +10,7 @@ function linear_tol(r, r0, iter; α=9)
     end
 end
 
-function mechanical_solver!( dx, M, r, 𝐊, 𝐐, 𝐐ᵀ, 𝐏, 𝐊_PC; 
+function mechanical_solver!( dx, M, r, 𝐊, 𝐐, 𝐐ᵀ, 𝐏, 𝐊_PC, 𝐐_PC, 𝐐ᵀ_PC, 𝐏_PC; 
     solver=:PH, ηb=1e5, ϵ_l=1e-9, niter_l=10, restart=20, noisy=true
     ) 
     if solver == :PH
@@ -23,7 +23,7 @@ function mechanical_solver!( dx, M, r, 𝐊, 𝐐, 𝐐ᵀ, 𝐏, 𝐊_PC;
     elseif solver == :GCR
         # Coupled GCR with Cholesky as PC
         𝐌 = [M.Vx.Vx M.Vx.Vy M.Vx.Pt; M.Vy.Vx M.Vy.Vy M.Vy.Pt; M.Pt.Vx M.Pt.Vy  M.Pt.Pt]            
-        KSP_GCR_Stokes!( dx, 𝐌, .-r, 𝐊_PC, 𝐐, 𝐐ᵀ,  𝐏, ηb=1e5, ϵ_l=ϵ_l, restart=20 )
+        KSP_GCR_Stokes!( dx, 𝐌, .-r, 𝐊_PC, 𝐐_PC, 𝐐ᵀ_PC, 𝐏_PC, ηb=1e5, ϵ_l=ϵ_l, restart=20 )
     end
 end
 

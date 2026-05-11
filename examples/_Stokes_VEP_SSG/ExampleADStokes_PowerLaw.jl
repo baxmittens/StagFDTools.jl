@@ -82,8 +82,11 @@ using TimerOutputs
     𝐊    = ExtendableSparseMatrix(nVx + nVy, nVx + nVy)
     𝐊_PC = ExtendableSparseMatrix(nVx + nVy, nVx + nVy)
     𝐐    = ExtendableSparseMatrix(nVx + nVy, nPt)
+    𝐐_PC = ExtendableSparseMatrix(nVx + nVy, nPt)
     𝐐ᵀ   = ExtendableSparseMatrix(nPt, nVx + nVy)
+    𝐐ᵀ_PC= ExtendableSparseMatrix(nPt, nVx + nVy)
     𝐏    = ExtendableSparseMatrix(nPt, nPt)
+    𝐏_PC = ExtendableSparseMatrix(nPt, nPt)
     dx   = zeros(nVx + nVy + nPt)
     r    = zeros(nVx + nVy + nPt)
 
@@ -219,7 +222,9 @@ using TimerOutputs
             𝐏  .= M.Pt.Pt
             # Picard preconditioner
             𝐊_PC  .= [M_PC.Vx.Vx M_PC.Vx.Vy; M_PC.Vy.Vx M_PC.Vy.Vy]
-
+            𝐐_PC  .= [M_PC.Vx.Pt; M_PC.Vy.Pt]
+            𝐐ᵀ_PC .= [M_PC.Pt.Vx M_PC.Pt.Vy]
+            𝐏_PC  .= M_PC.Pt.Pt
             #--------------------------------------------#
      
             # Inexact Newton-Raphson
@@ -228,7 +233,7 @@ using TimerOutputs
 
             # Direct-iterative solver
             @timeit to "Linear solve" begin
-                mechanical_solver!( dx, M, r, 𝐊, 𝐐, 𝐐ᵀ, 𝐏, 𝐊_PC; solver=solver, ηb=γ, ϵ_l=ϵ_l, niter_l=10, restart=20) 
+                mechanical_solver!( dx, M, r, 𝐊, 𝐐, 𝐐ᵀ, 𝐏, 𝐊_PC, 𝐐_PC, 𝐐ᵀ_PC, 𝐏_PC; solver=solver, ηb=γ, ϵ_l=ϵ_l, niter_l=10, restart=20) 
             end
 
             #--------------------------------------------#
