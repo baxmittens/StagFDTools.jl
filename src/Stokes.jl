@@ -986,7 +986,7 @@ end
                 ε̇vec = @SVector([ϵ̇xx, ϵ̇yy, ϵ̇xy, Pt[i, j]])
 
                 # Tangent operator used for Newton Linearisation
-                stress_state = StressVector!(ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.c[i, j], Δ) # !!!!!!!!!!!!!!!!!!!!!!!! cambiar phase_ratio e portare direttamente G 
+                stress_state = StressVector!(ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.c[i, j], Δ)
                 τ_vec, jac = ad_jacobian_first(StressVector!, ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.c[i, j], Δ)
                 _, η_local, λ̇_local, τII_local = stress_state
 
