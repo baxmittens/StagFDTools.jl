@@ -15,25 +15,15 @@ using TimerOutputs
     D_BC   = D_template
 
     # Material parameters
-    materials = ( 
-        g    = [0.0    0.0],
-        compressible = false,
-        plasticity   = :none,
-        ρ    = [1.0    1.0    1.0  ],
-        n    = [1.0    1.0    1.0  ],
-        η0   = [1e0    1e-3   1e+3 ], 
-        G    = [1e6    1e6    1e6  ],
-        C    = [150    150    150  ],
-        ϕ    = [30.    30.    30.  ],
-        ηvp  = [0.5    0.5    0.5  ],
-        β    = [1e-2   1e-2   1e-2 ],
-        ψ    = [3.0    3.0    3.0  ],
-        B    = [0.     0.     0.   ],
-        cosϕ = [0.0    0.0    0.0  ],
-        sinϕ = [0.0    0.0    0.0  ],
-        sinψ = [0.0    0.0    0.0  ],
-    )           # 1     # 2
-    materials.B   .= (2*materials.η0).^(-materials.n)
+    nphases = 3
+    materials = initialize_materials(nphases; compressible=false)
+    materials.g   .= [0.0,  0.0]
+    materials.ρ   .= [1.0,  1.0,  1.0]
+    materials.n   .= [1.0,  1.0,  1.0]
+    materials.η0  .= [1e0,  1e-3, 1e+3]
+    materials.G   .= [1e6,  1e6,  1e6]
+    materials.β   .= [1e-2, 1e-2, 1e-2]
+    preprocess!(materials)
     
     phase = (3,2,2,3,2,3,2,3,3,2)
  
@@ -131,6 +121,9 @@ using TimerOutputs
     Vi      = (x  = zeros(size_x...), y  = zeros(size_y...))
     η       = (c  =  ones(size_c...), v  =  ones(size_v...) )
     ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
+    G       = (c  = zeros(size_c...), v  = zeros(size_v...) )
+    β       = (c  = zeros(size_c...), v  = zeros(size_v...) )
+    ρ       = (c  = zeros(size_c...), v  = zeros(size_v...) )
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
     ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
     τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
@@ -191,6 +184,8 @@ using TimerOutputs
     end
 
 
+    phase_ratios = InitialisePhaseRatios(phases, nphases)
+
     #--------------------------------------------#
 
     rvec = zeros(length(α))
@@ -205,12 +200,14 @@ using TimerOutputs
         err.x .= 0.
         err.y .= 0.
         err.p .= 0.
-        
-        # Swap old values 
+
+        # Swap old values
         τ0.xx .= τ.xx
         τ0.yy .= τ.yy
         τ0.xy .= τ.xy
         Pt0   .= Pt
+
+        compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, size_c, size_v, nphases)
 
         for iter=1:niter
 
@@ -219,10 +216,10 @@ using TimerOutputs
             #--------------------------------------------#
             # Residual check        
             @timeit to "Residual" begin
-   TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
-                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ) 
-                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
-                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
+                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
+                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, ξ, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
             end
 
             err.x[iter] = norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
@@ -237,9 +234,9 @@ using TimerOutputs
             #--------------------------------------------#
             # Assembly
             @timeit to "Assembly" begin
-                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
+                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, ξ, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, ρ, materials, number, pattern, type, BC, nc, Δ)
             end
 
             #--------------------------------------------# 
@@ -260,10 +257,10 @@ using TimerOutputs
 
             #--------------------------------------------#
             # Line search & solution update
-            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
+            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, ξ, ρ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_ratios, nc, Δ)
 
             UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
-            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
+            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
         end
 
         # Update pressure

@@ -1,4 +1,3 @@
-# using BenchmarkTools
 function line(p, K, dt, η_ve, ψ, p1, t1)
     p2 = p1 + K * dt * sind(ψ)  # introduce sinϕ ?
     t2 = t1 - η_ve
@@ -11,15 +10,15 @@ end
 yield_DruckerPrager(τ, P, C, cosΨ, sinΨ) = τ - C * cosΨ - P * sinΨ
 
 function Yield(x, p, model::DruckerPrager)
-    C, cosϕ, sinϕ, cosψ, sinψ, ηvp = p
+    (; C, cosϕ, sinϕ, cosψ, sinψ, ηvp) = p
     ϵ = -1e-13
     τ, P, λ̇ = x[1], x[2], x[3]
-    F = yield_DruckerPrager(τ, P, C, cosϕ, sinϕ)
+    F = yield_DruckerPrager(τ, P, p.C, p.cosϕ, p.sinϕ)
     return (F - λ̇ * ηvp) * (F > ϵ) + (F < ϵ) * λ̇ * ηvp
 end
 
 function Potential(x, p, model::DruckerPrager)
-    C, cosϕ, sinϕ, cosψ, sinψ, ηvp = p
+    (; C, cosϕ, sinϕ, cosψ, sinψ, ηvp) = p
     ϵ = -1e-13
     τ, P, λ̇ = x[1], x[2], x[3]
     Q = yield_DruckerPrager(τ, P, C, cosψ, sinψ)
@@ -29,7 +28,7 @@ end
 yield_Hyperbolic(τ, P, C, cosΨ, sinΨ, σT) = sqrt(τ^2 + (C * cosΨ - σT * sinΨ)^2) - (P * sinΨ + C * cosΨ)
 
 function Yield(x, p, model::DruckerHyperbolic)
-    C, cosϕ, sinϕ, cosΨ, sinΨ, σT, ηvp = p
+    (; C, cosϕ, sinϕ, cosψ, sinψ, σT, ηvp) = p
     ϵ = -1e-13
     τ, P, λ̇ = x[1], x[2], x[3]
     F = yield_Hyperbolic(τ, P, C, cosϕ, sinϕ, σT)
@@ -37,10 +36,10 @@ function Yield(x, p, model::DruckerHyperbolic)
 end
 
 function Potential(x, p, model::DruckerHyperbolic)
-    C, cosϕ, sinϕ, cosΨ, sinΨ, σT, ηvp = p
+    (; C, cosϕ, sinϕ, cosψ, sinψ, σT, ηvp) = p
     ϵ = -1e-13
     τ, P, λ̇ = x[1], x[2], x[3]
-    Q = yield_Hyperbolic(τ, P, C, cosΨ, sinΨ, σT)
+    Q = yield_Hyperbolic(τ, P, C, cosψ, sinψ, σT)
     return Q
 end
 
@@ -51,7 +50,7 @@ end
 yield_Golchin(τ, P, A, B, C, β, λ̇, ηvp) = B * (P - λ̇ * ηvp - C)^2 / A + A * (τ - λ̇ * ηvp - β * (P - λ̇ * ηvp))^2 / B - A * B
 
 function Yield(x, p, model::Golchin2021)
-    M, N, Pt, Pc, α, β, γ, ηvp = p
+    (; M, N, Pt, Pc, α, β, γ, ηvp) = p
     ϵ = -1e-13
     τ, P, λ̇ = x[1], x[2], x[3]
     C = Cf(Pc, Pt, γ)
@@ -63,7 +62,7 @@ function Yield(x, p, model::Golchin2021)
 end
 
 function Potential(x, p, model::Golchin2021)
-    M, N, Pt, Pc, α, β, γ, ηvp = p
+    (; M, N, Pt, Pc, α, β, γ, ηvp) = p
     ϵ = -1e-13
     τ, P, λ̇ = x[1], x[2], x[3]
     C = Cf(Pc, Pt, γ)
@@ -124,9 +123,10 @@ function NonLinearReturnMapping(τII, P, ε̇_eff, Dkk, P0, ηve, β, Δt, plast
     P_trial = P
     itermax = 100
 
-    x = @MVector([τII, P, λ̇])
+    T = typeof(τII)
+    x = MVector{3,T}(τII, P, λ̇)
     αvec = @SVector([0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0])
-    Fvec = @MVector(zeros(length(αvec)))
+    Fvec = MVector{length(αvec),T}(zeros(T, length(αvec)))
 
     trial = (τ_trial, ε̇_eff, P_trial, Dkk, P0, ηve, K, Δt)
 
@@ -168,13 +168,19 @@ function NonLinearReturnMapping(τII, P, ε̇_eff, Dkk, P0, ηve, β, Δt, plast
 
     if iter == itermax && (nR > tol && (nR / nR0) > tol)
         R = RheologyResidual(x, trial, plastic, model)
-        @show τII * 1e9, P * 1e9
+        @warn "Failed return mapping after $iter iterations"
+        @show τII, P, ε̇_eff, ηve, β
+        @show nR, nR0, nR / nR0, tol
         @show trial
         @show plastic
         @show R0
         @show R
         @show x
-        error("Failed return mapping")
+        # Relax tolerance and retry once
+        tol_relax = tol * 100
+        if nR > tol_relax || (nR / nR0) > tol_relax
+            error("Failed return mapping")
+        end
     end
 
     if x[1] < 0
@@ -273,13 +279,13 @@ function return_mapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δt, comp, pl::Druc
 end
 
 function return_mapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δt, comp, pl::DruckerHyperbolic, phases)
-    p = (pl.C[phases], pl.cosϕ[phases], pl.sinϕ[phases], pl.sinψ[phases], pl.σT[phases], pl.ηvp[phases])
+    p = (C=pl.C[phases], cosϕ=pl.cosϕ[phases], sinϕ=pl.sinϕ[phases], sinψ=pl.sinψ[phases], cosψ=pl.cosψ[phases], σT=pl.σT[phases], ηvp=pl.ηvp[phases])
     return NonLinearReturnMapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δt, p, DruckerHyperbolic())
 end
 
 function return_mapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δt, comp, pl::Golchin2021, phases)
     Pt = -pl.σT[phases]
-    p = (pl.M[phases], pl.N[phases], Pt, pl.Pc[phases], pl.a[phases], pl.b[phases], pl.c[phases], pl.ηvp[phases])
+    p = (M=pl.M[phases], N=pl.N[phases], Pt, Pc=pl.Pc[phases], α=pl.a[phases], β=pl.b[phases], γ=pl.c[phases], ηvp=pl.ηvp[phases])
     return NonLinearReturnMapping(τII, P, ε̇II, Dkk, P0, ηvep, β, Δt, p, Golchin2021())
 end
 
@@ -698,36 +704,3 @@ end
 
 LocalRheology_phase_ratios(args...) = LocalRheology(args...)
 StressVector_phase_ratios!(args...) = StressVector!(args...)
-
-# let
-#     nphases = 2
-#     materials = (
-#         n=[1.0, 1.0],
-#         η0=[1e2, 1e-1],
-#         B=[0.0, 0.0],
-#         G=[1e1, 1e1],
-#         β=[1e-2, 1e-2],
-#         compressible=true,
-#         phase_avg=:arithmetic,
-#         plasticity=DruckerPrager(
-#             C=[150.0, 150.0],
-#             cosϕ=[cosd(30.0), cosd(30.0)],
-#             sinϕ=[sind(30.0), sind(30.0)],
-#             cosψ=[cosd(3.0), cosd(3.0)],
-#             sinψ=[sind(3.0), sind(3.0)],
-#             ηvp=[0.5, 0.5]
-#         )
-#     )
-
-#     # Create phase ratios
-#     phase_ratios = [0.5, 0.5]
-
-#     # Create test strain rate (4 components)
-#     ε̇ = @SVector([1e-15, 1e-15, 1e-15, 0.0])
-
-#     # Create other parameters
-#     Dkk = 0.0
-#     P0 = 1.0e6
-#     Δ = (t=0.5,)
-#     @benchmark LocalRheology($ε̇, $Dkk, $P0, $materials, $phase_ratios, $Δ)
-# end

@@ -1,4 +1,4 @@
-using StagFDTools, StagFDTools.Stokes, StagFDTools.Rheology, ExtendableSparse, StaticArrays, Plots, LinearAlgebra, SparseArrays, Printf
+using StagFDTools, StagFDTools.Stokes, StagFDTools.Rheology, ExtendableSparse, StaticArrays, CairoMakie, LinearAlgebra, SparseArrays, Printf
 import Statistics:mean
 using DifferentiationInterface
 using TimerOutputs
@@ -16,19 +16,19 @@ using ProfileCanvas, BenchmarkTools
                           0  1 ])
 
     # Material parameters
-    materials = ( 
-        compressible = true,
-        n   = [1.0  1.0],
-        η0  = [1e2  1e-1], 
-        G   = [1e1  1e1],
-        C   = [150  150],
-        ϕ   = [30.  30.],
-        ηvp = [0.5  0.5],
-        β   = [1e-2 1e-2],
-        ψ   = [3    3],
-        B   = [0.  0.],
-    )
-    materials.B   .= (2*materials.η0).^(-materials.n)
+    # Materials initialization
+    nphases = 2
+    materials = initialize_materials(nphases; compressible=true)
+
+    # Parameters
+    params_bg = (η0=1e2, G=1e1, β=1e-2)
+    params_in = (η0=1e-1, G=1e1, β=1e-2)
+
+    materials.g .= [0., 0.]
+    materials.η0 .= [params_bg.η0, params_in.η0]
+    materials.G .= [params_bg.G, params_in.G]
+
+    preprocess!(materials)
 
     # Time steps
     Δt0   = 0.5
@@ -92,6 +92,9 @@ using ProfileCanvas, BenchmarkTools
     Vi      = (x  = zeros(size_x...), y  = zeros(size_y...))
     η       = (c  =  ones(size_c...), v  =  ones(size_v...) )
     ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
+    G = (c=zeros(size_c...), v=zeros(size_v...))
+    β = (c=zeros(size_c...), v=zeros(size_v...))
+    ρ = (c=zeros(size_c...), v=zeros(size_v...))
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
     ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
     τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
@@ -99,6 +102,7 @@ using ProfileCanvas, BenchmarkTools
     Pt      = zeros(size_c...)
     Pti     = zeros(size_c...)
     Pt0     = zeros(size_c...)
+    ΔPt     = (c=zeros(size_c...), Vx = zeros(size_x...), Vy = zeros(size_y...))
     Ptc     = zeros(size_c...)
     Dc      =  [@MMatrix(zeros(4,4)) for _ in axes(ε̇.xx,1), _ in axes(ε̇.xx,2)]
     Dv      =  [@MMatrix(zeros(4,4)) for _ in axes(ε̇.xy,1), _ in axes(ε̇.xy,2)]
@@ -134,18 +138,21 @@ using ProfileCanvas, BenchmarkTools
     # Set material geometry 
     phases.c[inx_c, iny_c][(xc.^2 .+ (yc').^2) .<= 0.1^2] .= 2
     phases.v[inx_v, iny_v][(xv.^2 .+ (yv').^2) .<= 0.1^2] .= 2
+    phase_ratios=InitialisePhaseRatios(phases,nphases)
 
     #--------------------------------------------#
 
+    compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, size_c, size_v, nphases)
+
     @info "Benchmark AssembleMomentum2D_x!"
-    display( @benchmark AssembleMomentum2D_x!($(M, V, Pt, Pt0, λ̇, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)...) )
+    display( @benchmark AssembleMomentum2D_x!($(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)...) )
 
     @info "Benchmark AssembleMomentum2D_y!"
-    display( @benchmark AssembleMomentum2D_y!($(M, V, Pt, Pt0, λ̇, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)...) )
+    display( @benchmark AssembleMomentum2D_y!($(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, ρ, materials, number, pattern, type, BC, nc, Δ)...) )
    
     @info "Benchmark AssembleContinuity2D!"
-    ProfileCanvas.@profview AssembleContinuity2D!(M, V, Pt, Pt0, λ̇, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-    display( @benchmark AssembleMomentum2D_x!($(M, V, Pt, Pt0, λ̇, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)...) )
+    ProfileCanvas.@profview AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, ξ, materials, number, pattern, type, BC, nc, Δ)
+    display( @benchmark AssembleMomentum2D_x!($(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)...) )
     
 end
 

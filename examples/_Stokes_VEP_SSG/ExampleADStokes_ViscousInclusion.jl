@@ -1,4 +1,4 @@
-using StagFDTools, StagFDTools.Stokes, StagFDTools.Rheology, ExtendableSparse, StaticArrays, Plots, LinearAlgebra, SparseArrays, Printf
+using StagFDTools, StagFDTools.Stokes, StagFDTools.Rheology, ExtendableSparse, StaticArrays, CairoMakie, LinearAlgebra, SparseArrays, Printf
 import Statistics:mean
 using DifferentiationInterface
 using TimerOutputs
@@ -13,26 +13,21 @@ using TimerOutputs
     config = BC_template
     D_BC   = D_template
 
-    # Material parameters
-    materials = ( 
-        compressible = false,
-        plasticity   = :none,
-        g    = [0.0    0.0  ],
-        ρ    = [1.0    1.0  ],
-        n    = [1.0    1.0  ],
-        η0   = [1e0    1e5  ], 
-        G    = [1e6    1e6  ],
-        C    = [150    150  ],
-        ϕ    = [30.    30.  ],
-        ηvp  = [0.5    0.5  ],
-        β    = [1e-2   1e-2 ],
-        ψ    = [3.0    3.0  ],
-        B    = [0.     0.   ],
-        cosϕ = [0.0    0.0  ],
-        sinϕ = [0.0    0.0  ],
-        sinψ = [0.0    0.0  ],
-    )           # 1     # 2
-    materials.B   .= (2*materials.η0).^(-materials.n)
+    # Materials initialization
+    nphases = 2
+    materials = initialize_materials(nphases; compressible=false)
+
+    # Parameters
+    params_bg = (ρ=1.0, n=1.0, η0=1e0, G=1e6)
+    params_in = (ρ=1.0, n=1.0, η0=1e5, G=1e6)
+
+    materials.g .= [0., 0.]
+    materials.ρ .= [params_bg.ρ, params_in.ρ]
+    materials.n .= [params_bg.n, params_in.n]
+    materials.η0 .= [params_bg.η0, params_in.η0]
+    materials.G .= [params_bg.G, params_in.G]
+
+    preprocess!(materials)
 
     # Time steps
     Δt0   = 0.5
@@ -94,6 +89,8 @@ using TimerOutputs
     # Intialise field
     L   = (x=1.0, y=1.0)
     Δ   = (x=L.x/nc.x, y=L.y/nc.y, t = Δt0)
+    x = (min=-L.x / 2, max=L.x / 2)
+    y = (min=-L.y / 2, max=L.y / 2)
 
     # Allocations
     R       = (x  = zeros(size_x...), y  = zeros(size_y...), p  = zeros(size_c...))
@@ -101,6 +98,9 @@ using TimerOutputs
     Vi      = (x  = zeros(size_x...), y  = zeros(size_y...))
     η       = (c  =  ones(size_c...), v  =  ones(size_v...) )
     ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
+    G       = (c=zeros(size_c...), v=zeros(size_v...))
+    β       = (c=zeros(size_c...), v=zeros(size_v...))
+    ρ       = (c=zeros(size_c...), v=zeros(size_v...))
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
     ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
     τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
@@ -145,6 +145,7 @@ using TimerOutputs
     rad = 0.1 + 1e-13
     phases.c[inx_c, iny_c][(xc.^2 .+ (yc').^2) .<= rad^2] .= 2
     phases.v[inx_v, iny_v][(xv.^2 .+ (yv').^2) .<= rad^2] .= 2
+    phase_ratios = InitialisePhaseRatios(phases, nphases)
 
     #--------------------------------------------#
 
@@ -167,6 +168,8 @@ using TimerOutputs
         τ0.xy .= τ.xy
         Pt0   .= Pt
 
+        compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, size_c, size_v, nphases)
+
         for iter=1:niter
 
             @printf("Iteration %04d\n", iter)
@@ -174,10 +177,10 @@ using TimerOutputs
             #--------------------------------------------#
             # Residual check        
             @timeit to "Residual" begin
-   TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
-                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ) 
-                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
-                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
+                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
+                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, ξ, materials, number, type, BC, nc, Δ) 
+                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
             end
 
             err.x[iter] = norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
@@ -192,9 +195,9 @@ using TimerOutputs
             #--------------------------------------------#
             # Assembly
             @timeit to "Assembly" begin
-                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
+                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, ξ, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, ρ, materials, number, pattern, type, BC, nc, Δ)
             end
 
             #--------------------------------------------# 
@@ -215,10 +218,10 @@ using TimerOutputs
 
             #--------------------------------------------#
             # Line search & solution update
-            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
-
+            # Line search & solution update
+            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, ξ, ρ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_ratios, nc, Δ)
             UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
-            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
+            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
         end
 
         # Update pressure
@@ -226,14 +229,25 @@ using TimerOutputs
 
         #--------------------------------------------#
 
-        p3 = heatmap(xv, yc, V.x[inx_Vx,iny_Vx]', aspect_ratio=1, xlim=extrema(xv), title="Vx", color=:vik)
-        p4 = heatmap(xc, yv, V.y[inx_Vy,iny_Vy]', aspect_ratio=1, xlim=extrema(xc), title="Vy", color=:vik)
-        p2 = heatmap(xc, yc,  Pt[inx_c,iny_c]'.-mean( Pt[inx_c,iny_c]), aspect_ratio=1, xlim=extrema(xc), title="Pt", color=:vik)
-        p1 = plot(xlabel="Iterations @ step $(it) ", ylabel="log₁₀ error", legend=:topright, title=BC_template)
-        p1 = scatter!(1:niter, log10.(err.x[1:niter]), label="Vx")
-        p1 = scatter!(1:niter, log10.(err.y[1:niter]), label="Vy")
-        p1 = scatter!(1:niter, log10.(err.p[1:niter]), label="Pt")
-        display(plot(p1, p2, p3, p4, layout=(2,2)))
+        # Plot
+        Fig = Figure(size=(1200, 900), fontsize=14)
+        ax1 = Axis(Fig[1, 1], aspect=DataAspect(), title="Vx", xlabel="x", ylabel="y")
+        ax2 = Axis(Fig[1, 3], aspect=DataAspect(), title="Vy", xlabel="x", ylabel="y")
+        ax3 = Axis(Fig[2, 1], aspect=DataAspect(), title="Pt", xlabel="x", ylabel="y")
+        ax4 = Axis(Fig[2, 3], xlabel="Iterations step $(it)", ylabel="log₁₀ error")
+
+        hm1 = heatmap!(ax1, xv, yv, V.x[inx_Vx, iny_Vx]', colormap=:redsblues)
+        hm2 = heatmap!(ax2, xc, yc, V.y[inx_Vy, iny_Vy]', colormap=:redsblues)
+        hm3 = heatmap!(ax3, xc, yc, Pt[inx_c, iny_c]' .- mean(Pt[inx_c, iny_c]), colormap=:redsblues)
+        Colorbar(Fig[1, 2], hm1)
+        Colorbar(Fig[1, 4], hm2)
+        Colorbar(Fig[2, 2], hm3)
+
+        scatter!(ax4, 1:niter, log10.(err.x[1:niter]), markersize=8, label="Vx")
+        scatter!(ax4, 1:niter, log10.(err.y[1:niter]), markersize=8, label="Vy")
+        scatter!(ax4, 1:niter, log10.(err.p[1:niter]), markersize=8, label="Pt")
+        axislegend(ax4, position=:rt)
+        display(Fig)
 
     end
 

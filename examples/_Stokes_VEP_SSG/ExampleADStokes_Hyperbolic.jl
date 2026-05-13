@@ -42,48 +42,20 @@ end
                           0  -ε̇xx ])
 
     # Material parameters
-    materials = ( 
-        g    = [0.0    0.0],
-        compressible = true,
-        # plasticity   = :tensile,
-        plasticity   = :Hyperbolic,
-        # plasticity   = :DruckerPrager,
-        # plasticity   = :Kiss2023,
-        #      rock   gouge  salt 
-        n    = [1.0    1.0    1.0 ],      # Power law exponent
-        η0   = [1e48   1e28   1e13]./sc.σ./sc.t,      # Reference viscosity 
-        G    = [1e10   1e9    1e60]./sc.σ,      # Shear modulus
-        C    = [10e6   10e6   15e60]./sc.σ,      # Cohesion
-        ϕ    = [35.    35.    35. ],      # Friction angle
-        ψ    = [10.0   10.0   0.0 ],      # Dilation angle
-        ηvp  = [1e14   1e14   1e14].*1e-4/sc.σ./sc.t, # Viscoplastic regularisation
-        β    = [1e-11  1e-10 1e-12].*sc.σ,      # Compressibility
-        B    = [0.0    0.0    0.0 ],      # (calculated after) power-law creep pre-factor
-        cosϕ = [0.0    0.0    0.0 ],      # (calculated after) frictional parameters
-        sinϕ = [0.0    0.0    0.0 ],      # (calculated after) frictional parameters
-        cosψ = [0.0    0.0    0.0 ],      # (calculated after) frictional parameters
-        sinψ = [0.0    0.0    0.0 ],      # (calculated after) frictional parameters
-        σT   = [5e6   5.0e6  5.0e6]./sc.σ, # Kiss2023 / Tensile / Hyperbolic
-        δσT  = [1e6   1.0e6  1e6  ]./sc.σ, # Kiss2023
-        P1   = [0.0   0.0    0.0  ], # Kiss2023
-        τ1   = [0.0   0.0    0.0  ], # Kiss2023
-        P2   = [0.0   0.0    0.0  ], # Kiss2023
-        τ2   = [0.0   0.0    0.0  ], # Kiss2023
-    )
-    # For power law
-    materials.B   .= (2*materials.η0).^(-materials.n)
-
-    # For Kiss2023: calculate corner coordinates 
-    @. materials.P1 = -(materials.σT - materials.δσT)                                         # p at the intersection of cutoff and Mode-1
-    @. materials.τ1 = materials.δσT                                                           # τII at the intersection of cutoff and Mode-1
-    @. materials.P2 = -(materials.σT - materials.C*cosd(materials.ϕ))/(1.0-sind(materials.ϕ)) # p at the intersection of Drucker-Prager and Mode-1
-    @. materials.τ2 = materials.P2 + materials.σT   
-
-    # For plasticity
-    @. materials.cosϕ  = cosd(materials.ϕ)
-    @. materials.cosψ  = cosd(materials.ψ)
-    @. materials.sinϕ  = sind(materials.ϕ)
-    @. materials.sinψ  = sind(materials.ψ)
+    nphases = 2
+    materials = initialize_materials(nphases; plasticity=DruckerHyperbolic, compressible=true)
+    materials.g   .= [0.0,   0.0]
+    materials.ρ   .= [0.0,   0.0]
+    materials.n   .= [1.0,   1.0]
+    materials.η0  .= [1e48,  1e28] ./ sc.σ ./ sc.t
+    materials.G   .= [1e10,  1e9]  ./ sc.σ
+    materials.β   .= [1e-11, 1e-10] .* sc.σ
+    materials.plasticity.C   .= [10e6,  10e6]  ./ sc.σ
+    materials.plasticity.σT  .= [5e6,   5.0e6] ./ sc.σ
+    materials.plasticity.ϕ   .= [35.,   35.]
+    materials.plasticity.ψ   .= [10.0,  10.0]
+    materials.plasticity.ηvp .= [1e14,  1e14] .* 1e-4 ./ sc.σ ./ sc.t
+    preprocess!(materials)
     
     # Geometry
     L     = (x=width/sc.L, y=height/sc.L)
@@ -150,6 +122,9 @@ end
     Vi      = (x  = zeros(size_x...), y  = zeros(size_y...))
     η       = (c  =  ones(size_c...), v  =  ones(size_v...) )
     ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
+    G       = (c  = zeros(size_c...), v  = zeros(size_v...) )
+    β       = (c  = zeros(size_c...), v  = zeros(size_v...) )
+    ρ       = (c  = zeros(size_c...), v  = zeros(size_v...) )
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
     ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
     τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
@@ -191,9 +166,10 @@ end
         BC.Vy[ end-1, iny_Vy] .= (type.Vy[ end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*xv[end] .+ D_BC[2,2]*yv)
     end
 
-    # Set material geometry 
+    # Set material geometry
     phases.c[inx_c, iny_c][(xc.^2 .+ (yc').^2) .<= 0.1^2] .= 2
     phases.v[inx_v, iny_v][(xv.^2 .+ (yv').^2) .<= 0.1^2] .= 2
+    phase_ratios = InitialisePhaseRatios(phases, nphases)
 
     Pt  .= Pbg#*rand(size(Pt)...)
     Pt0 .= Pt
@@ -215,11 +191,13 @@ end
         fill!(err.y, 0e0)
         fill!(err.p, 0e0)
         
-        # Swap old values 
+        # Swap old values
         τ0.xx .= τ.xx
         τ0.yy .= τ.yy
         τ0.xy .= τ.xy
         Pt0   .= Pt
+
+        compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, size_c, size_v, nphases)
 
         # Time integration
         for iter=1:niter
@@ -227,14 +205,14 @@ end
             @printf("Iteration %04d\n", iter)
 
             #--------------------------------------------#
-            # Residual check        
+            # Residual check
             @timeit to "Residual" begin
-   TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
+                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
                 @show extrema(λ̇.c[inx_c,iny_c])
                 @show extrema(λ̇.v[inx_v,iny_v])
-                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ) 
-                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
-                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
+                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, ξ, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
             end
 
             err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
@@ -249,9 +227,9 @@ end
             #--------------------------------------------#
             # Assembly
             @timeit to "Assembly" begin
-                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
+                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, ξ, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, ρ, materials, number, pattern, type, BC, nc, Δ)
             end
 
             #--------------------------------------------# 
@@ -272,10 +250,10 @@ end
 
             #--------------------------------------------#
             # Line search & solution update
-            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
+            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, ξ, ρ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_ratios, nc, Δ)
 
             UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
-            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
+            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
 
         end
 
@@ -355,21 +333,21 @@ end
             # lines!(ax, P_ax*sc.σ/1e6, τ_ax_rock*sc.σ/1e6, color=:black)
             
             # Plot yield
-            P_ax       = LinRange(-materials.σT[1]+1e-4, 80/1e3, 100)
+            P_ax       = LinRange(-materials.plasticity.σT[1]+1e-4, 80/1e3, 100)
             τ_ax       = LinRange( 0, 50/1e3, 100)
             f          = zeros(length(P_ax), length(τ_ax))
             for i in eachindex(P_ax), j in eachindex(τ_ax)
-                m = materials
-                yieldf = Hyperbolic()
-                p = (m.C[1], m.cosϕ[1], m.sinϕ[1], m.cosψ[1], m.sinψ[1], m.σT[1], 0*m.ηvp[1])
+                m = materials.plasticity
+                yieldf = DruckerHyperbolic()
+                p = (C=m.C[1], cosϕ=m.cosϕ[1], sinϕ=m.sinϕ[1], cosψ=m.cosψ[1], sinψ=m.sinψ[1], σT=m.σT[1], ηvp=0*m.ηvp[1])
                 f[i,j] = Yield(@SVector([τ_ax[j], P_ax[i], 0.0]), p, yieldf)
             end
             contour!(ax, P_ax*sc.σ/1e6, τ_ax*sc.σ/1e6, f*sc.σ./1e6, levels=[0., 0.0], color=:red)
 
-            cosΨ, sinΨ, C, σT = materials.cosϕ[1], materials.sinϕ[1], materials.sinϕ[1], materials.σT[1]
+            cosΨ, sinΨ, C, σT = materials.plasticity.cosϕ[1], materials.plasticity.sinϕ[1], materials.plasticity.sinϕ[1], materials.plasticity.σT[1]
             B = C * cosΨ - σT*sinΨ
-            dQdtau = @. τII_rock /sqrt(τII_rock^2 + B^2) 
-            scatter!(ax, (P_rock .+ 0*sinΨ .* λ̇_rock.*materials.ηvp[1])*sc.σ/1e6, (τII_rock .+ dQdtau.*λ̇_rock.*materials.ηvp[1])*sc.σ/1e6, color=:black )
+            dQdtau = @. τII_rock /sqrt(τII_rock^2 + B^2)
+            scatter!(ax, (P_rock .+ 0*sinΨ .* λ̇_rock.*materials.plasticity.ηvp[1])*sc.σ/1e6, (τII_rock .+ dQdtau.*λ̇_rock.*materials.plasticity.ηvp[1])*sc.σ/1e6, color=:black)
                     
             # τ_ax_gouge = materials.C[2]*materials.cosϕ[2] .+ P_ax.*materials.sinϕ[2]
             # lines!(ax, P_ax*sc.σ/1e6, τ_ax_gouge*sc.σ/1e6, color=:red)

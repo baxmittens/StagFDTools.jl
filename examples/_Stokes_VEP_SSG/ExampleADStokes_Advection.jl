@@ -74,25 +74,15 @@ end
     D_BC   = D_template
 
     # Material parameters
-    materials = ( 
-        compressible = false,
-        plasticity   = :none,
-        g    = [0.0    0.0  ],
-        ρ    = [1.0    1.0  ],
-        n    = [1.0    1.0  ],
-        η0   = [1e0    1e5  ], 
-        G    = [1e60   2e60 ],
-        C    = [150    150  ],
-        ϕ    = [30.    30.  ],
-        ηvp  = [0.5    0.5  ],
-        β    = [1e-20  2e-20],
-        ψ    = [3.0    3.0  ],
-        B    = [0.     0.   ],
-        cosϕ = [0.0    0.0  ],
-        sinϕ = [0.0    0.0  ],
-        sinψ = [0.0    0.0  ],
-    )
-    materials.B   .= (2*materials.η0).^(-materials.n)
+    nphases  = 2
+    materials = initialize_materials(nphases; compressible=false)
+    materials.g  .= [0.0,   0.0]
+    materials.ρ  .= [1.0,   1.0]
+    materials.n  .= [1.0,   1.0]
+    materials.η0 .= [1e0,   1e5]
+    materials.G  .= [1e60,  2e60]
+    materials.β  .= [1e-20, 2e-20]
+    preprocess!(materials)
 
     # Time steps
     Δt0   = 0.5

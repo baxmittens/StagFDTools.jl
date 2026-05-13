@@ -1,4 +1,3 @@
-# using BenchmarkTools
 function InitialiseParticleField(nc, nmpc, L, Δ, materials, noise)
     nphases = length(materials.n)
     num = (x=nmpc.x * (nc.x + 2), y=nmpc.y * (nc.y + 2))
@@ -166,41 +165,3 @@ function compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, size_c
     end
     return nothing
 end
-
-# let
-#     # Benchmarking section to check for allocations
-#     using BenchmarkTools
-
-#     # Setup test data
-#     nc = (x=10, y=10)
-#     nmpc = (x=5, y=5)
-#     L = (x=100.0, y=100.0)
-#     Δ = (x=1.0, y=1.0)
-
-#     # Create simple test materials
-#     nphases = 2
-#     materials = (
-#         n=[0.3, 0.7],
-#         β=[1e-5, 2e-5],
-#         G=[1e10, 5e9],
-#         ρ=[2700.0, 2500.0],
-#         ξ0=[1e21, 5e20]
-#     )
-
-#     # Initialize particle field
-#     m = InitialiseParticleField(nc, nmpc, L, Δ, materials, false)
-
-#     # Initialize phase ratios
-#     phase_ratios, phase_weights = InitialisePhaseRatios(m, (xx=rand(1:nphases, nc.x + 2, nc.y + 2), xy=rand(1:nphases, nc.x + 2, nc.y + 2)))
-
-#     # Create grid fields
-#     size_c = (nc.x + 2, nc.y + 2)
-#     size_v = (nc.x + 3, nc.y + 3)
-#     β = (c=zeros(size_c...), v=zeros(size_v...))
-#     G = (c=zeros(size_c...), v=zeros(size_v...))
-#     ρ = (c=zeros(size_c...), v=zeros(size_v...))
-#     ξ = (c=zeros(size_c...), v=zeros(size_v...))
-
-#     # Benchmark compute_grid_fields!
-#     result = @benchmark compute_grid_fields!($G, $β, $ρ, $ξ, $materials, $phase_ratios, $nc, $size_c, $size_v, $nphases)
-# end

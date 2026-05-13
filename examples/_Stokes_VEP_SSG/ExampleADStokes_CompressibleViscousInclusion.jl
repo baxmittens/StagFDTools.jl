@@ -23,10 +23,14 @@ using ExactFieldSolutions
                         0  -params.ε̇] )
 
     # Material parameters
-    materials_properties     = initialize_materials( 2, compressible=true )
-    materials_properties.η0 .= [params.ηm, params.ηi] 
-    materials_properties.ξ0 .= [params.ξm, params.ξi]
-    materials                = preprocess_materials( materials_properties )
+    nphases  = 2
+    materials = initialize_materials(nphases; compressible=true)
+    materials.η0 .= [params.ηm, params.ηi]
+    materials.ξ0 .= [params.ξm, params.ξi]
+    materials.G  .= [1e50, 1e50]
+    materials.β  .= [0.0, 0.0]
+    materials.ρ  .= [0.0, 0.0]
+    preprocess!(materials)
 
     # Time steps
     Δt0   = 0.5
@@ -97,6 +101,9 @@ using ExactFieldSolutions
     Vi      = (x  = zeros(size_x...), y  = zeros(size_y...))
     η       = (c  =  ones(size_c...), v  =  ones(size_v...) )
     ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
+    G       = (c  = zeros(size_c...), v  = zeros(size_v...))
+    β       = (c  = zeros(size_c...), v  = zeros(size_v...))
+    ρ       = (c  = zeros(size_c...), v  = zeros(size_v...))
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
     ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
     τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
@@ -114,30 +121,38 @@ using ExactFieldSolutions
     𝐷_ctl   = (c = D_ctl_c, v = D_ctl_v)
 
     # Mesh coordinates
-    X = GenerateGrid(x, y, Δ, nc)
+    xv  = LinRange(x.min,         x.max,         nc.x+1)
+    yv  = LinRange(y.min,         y.max,         nc.y+1)
+    xc  = LinRange(x.min+Δ.x/2,  x.max-Δ.x/2,  nc.x)
+    yc  = LinRange(y.min+Δ.y/2,  y.max-Δ.y/2,  nc.y)
+    xce = LinRange(x.min-Δ.x/2,  x.max+Δ.x/2,  nc.x+2)
+    yce = LinRange(y.min-Δ.y/2,  y.max+Δ.y/2,  nc.y+2)
+    xve = LinRange(x.min-Δ.x,    x.max+Δ.x,    nc.x+3)
+    yve = LinRange(y.min-Δ.y,    y.max+Δ.y,    nc.y+3)
 
     # Initial velocity & pressure field
-    V.x[inx_Vx,iny_Vx] .= D_BC[1,1]*X.v.x .+ D_BC[1,2]*X.c.y' 
-    V.y[inx_Vy,iny_Vy] .= D_BC[2,1]*X.c.x .+ D_BC[2,2]*X.v.y'
-    Pt[inx_c, iny_c ]  .= 0.                 
+    V.x[inx_Vx,iny_Vx] .= D_BC[1,1]*xv .+ D_BC[1,2]*yc'
+    V.y[inx_Vy,iny_Vy] .= D_BC[2,1]*xc .+ D_BC[2,2]*yv'
+    Pt[inx_c, iny_c ]  .= 0.
     UpdateSolution!(V, Pt, dx, number, type, nc)
 
     # Boundary condition values
     BC = ( Vx = zeros(size_x...), Vy = zeros(size_y...), Pt = zeros(size_c...), Pf = zeros(size_c...))
     BC.Vx[     2, iny_Vx] .= (type.Vx[     1, iny_Vx] .== :Neumann_normal)  .* D_BC[1,1]
     BC.Vx[ end-1, iny_Vx] .= (type.Vx[   end, iny_Vx] .== :Neumann_normal)  .* D_BC[1,1]
-    BC.Vx[inx_Vx,      2] .= (type.Vx[inx_Vx,      2] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx,     2] .== :Dirichlet_tangent) .* (D_BC[1,1]*X.v.x .+ D_BC[1,2]*X.v.y[1]  )
-    BC.Vx[inx_Vx,  end-1] .= (type.Vx[inx_Vx,  end-1] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx, end-1] .== :Dirichlet_tangent) .* (D_BC[1,1]*X.v.x .+ D_BC[1,2]*X.v.y[end])
+    BC.Vx[inx_Vx,      2] .= (type.Vx[inx_Vx,      2] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx,     2] .== :Dirichlet_tangent) .* (D_BC[1,1]*xv .+ D_BC[1,2]*yv[1]  )
+    BC.Vx[inx_Vx,  end-1] .= (type.Vx[inx_Vx,  end-1] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx, end-1] .== :Dirichlet_tangent) .* (D_BC[1,1]*xv .+ D_BC[1,2]*yv[end])
     BC.Vy[inx_Vy,     2 ] .= (type.Vy[inx_Vy,     1 ] .== :Neumann_normal)  .* D_BC[2,2]
     BC.Vy[inx_Vy, end-1 ] .= (type.Vy[inx_Vy,   end ] .== :Neumann_normal)  .* D_BC[2,2]
-    BC.Vy[     2, iny_Vy] .= (type.Vy[     2, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[    2, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*X.v.x[1]   .+ D_BC[2,2]*X.v.y)
-    BC.Vy[ end-1, iny_Vy] .= (type.Vy[ end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*X.v.x[end] .+ D_BC[2,2]*X.v.y)
+    BC.Vy[     2, iny_Vy] .= (type.Vy[     2, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[    2, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*xv[1]   .+ D_BC[2,2]*yv)
+    BC.Vy[ end-1, iny_Vy] .= (type.Vy[ end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*xv[end] .+ D_BC[2,2]*yv)
 
-    # Set material geometry 
-    phases = (c= ones(Int64, size_c...), v= ones(Int64, size_v...), x =ones(Int64, size_x...), y=ones(Int64, size_y...) )  # phase on velocity points
+    # Set material geometry
+    phases = (c= ones(Int64, size_c...), v= ones(Int64, size_v...))
     rad = params.rc + 1e-13
-    phases.c[(X.c_e.x.^2 .+ (X.c_e.y').^2) .<= rad^2] .= 2
-    phases.v[(X.v_e.x.^2 .+ (X.v_e.y').^2) .<= rad^2] .= 2
+    phases.c[(xce.^2 .+ (yce').^2) .<= rad^2] .= 2
+    phases.v[(xve.^2 .+ (yve').^2) .<= rad^2] .= 2
+    phase_ratios = InitialisePhaseRatios(phases, nphases)
 
     # Analytics
     V_ana = (
@@ -151,25 +166,25 @@ using ExactFieldSolutions
     )
     ϵP   = zero(BC.Pt)
 
-    # Get P analytics 
+    # Get P analytics
     for i=1:size(BC.Pf,1), j=1:size(BC.Pf,2)
-        sol = Stokes2D_Duretz2026( [X.c_e.x[i], X.c_e.y[j]]; params )
+        sol = Stokes2D_Duretz2026( [xce[i], yce[j]]; params )
         Pt_ana[i,j] = sol.p
     end
 
-    # Get Vx analytics 
+    # Get Vx analytics
     for i=1:size(BC.Vx,1), j=2:size(BC.Vx,2)-1
-        sol = Stokes2D_Duretz2026( [X.v_e.x[i], X.c_e.y[j-1]]; params )
+        sol = Stokes2D_Duretz2026( [xve[i], xce[j-1]]; params )
         BC.Vx[i,j]   =  sol.V[1]
         V.x[i,j]     = sol.V[1]
         V_ana.x[i,j] = sol.V[1]
     end
 
-    # Get Vy analytics 
+    # Get Vy analytics
     for i=2:size(BC.Vy,1)-1, j=1:size(BC.Vy,2)
-        sol = Stokes2D_Duretz2026( [X.c_e.x[i-1], X.v_e.y[j]]; params )
-        BC.Vy[i,j]   = sol.V[2] 
-        V.y[i,j]     = sol.V[2] 
+        sol = Stokes2D_Duretz2026( [xce[i-1], yve[j]]; params )
+        BC.Vy[i,j]   = sol.V[2]
+        V.y[i,j]     = sol.V[2]
         V_ana.y[i,j] = sol.V[2]
     end
 
@@ -189,11 +204,13 @@ using ExactFieldSolutions
         err.y .= 0.
         err.p .= 0.
         
-        # Swap old values 
+        # Swap old values
         τ0.xx .= τ.xx
         τ0.yy .= τ.yy
         τ0.xy .= τ.xy
         Pt0   .= Pt
+
+        compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, size_c, size_v, nphases)
 
         for iter=1:niter
 
@@ -202,10 +219,10 @@ using ExactFieldSolutions
             #--------------------------------------------#
             # Residual check        
             @timeit to "Residual" begin
-                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
-                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ) 
-                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
-                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
+                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
+                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, ξ, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
             end
 
             err.x[iter] = norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
@@ -220,9 +237,9 @@ using ExactFieldSolutions
             #--------------------------------------------#
             # Assembly
             @timeit to "Assembly" begin
-                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
+                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, ξ, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, ρ, materials, number, pattern, type, BC, nc, Δ)
             end
 
             #--------------------------------------------# 
@@ -245,9 +262,9 @@ using ExactFieldSolutions
 
             #--------------------------------------------#
             # Line search & solution update
-            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
+            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, ξ, ρ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_ratios, nc, Δ)
             UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
-            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
+            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
         end
 
         # Update pressure
@@ -287,66 +304,66 @@ using ExactFieldSolutions
 
             ax    = Axis(fig[1,1], aspect=DataAspect(), title=L"$P$ numerics", xlabel=L"x", ylabel=L"y")
             field = (Pt_viz)[inx_c,iny_c].*sc.σ
-            hm    = heatmap!(ax, X.c.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
+            hm    = heatmap!(ax, xc, yc, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
+            contour!(ax, xc, yc,  phases.c[inx_c,iny_c], color=:black)
             hidexdecorations!(ax)
             Colorbar(fig[2, 1], hm, label = L"$P$ numerics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
             
             ax    = Axis(fig[1,2], aspect=DataAspect(), title=L"$P$ analytics", xlabel=L"x", ylabel=L"y")
             field = (Pt_ana)[inx_c,iny_c].*sc.σ
-            hm    = heatmap!(ax, X.c.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
+            hm    = heatmap!(ax, xc, yc, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
+            contour!(ax, xc, yc,  phases.c[inx_c,iny_c], color=:black)
             hidexdecorations!(ax)
             Colorbar(fig[2, 2], hm, label = L"$P$ analytics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
 
             ax    = Axis(fig[1,3], aspect=DataAspect(), title=L"$P$ error", xlabel=L"x", ylabel=L"y")
             field = (ϵP)[inx_c,iny_c].*sc.σ
-            hm    = heatmap!(ax, X.c.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
+            hm    = heatmap!(ax, xc, yc, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
+            contour!(ax, xc, yc,  phases.c[inx_c,iny_c], color=:black)
             hidexdecorations!(ax)
             Colorbar(fig[2, 3], hm, label = L"$P$ analytics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
 
             ###########################
             ax    = Axis(fig[3,1], aspect=DataAspect(), title=L"$V_{x}$ numerics", xlabel=L"x", ylabel=L"y")
             field = (Vx_viz)[inx_Vx,iny_Vx].*sc.σ
-            hm    = heatmap!(ax, X.v.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
+            hm    = heatmap!(ax, xv, yc, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
+            contour!(ax, xc, yc,  phases.c[inx_c,iny_c], color=:black)
             hidexdecorations!(ax)
             Colorbar(fig[4, 1], hm, label = L"$V_{x}$ numerics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
             
             ax    = Axis(fig[3,2], aspect=DataAspect(), title=L"$V_{x}$ analytics", xlabel=L"x", ylabel=L"y")
             field = (V_ana.x)[inx_Vx,iny_Vx].*sc.σ
-            hm    = heatmap!(ax, X.v.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
+            hm    = heatmap!(ax, xv, yc, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
+            contour!(ax, xc, yc,  phases.c[inx_c,iny_c], color=:black)
             hidexdecorations!(ax)
             Colorbar(fig[4, 2], hm, label = L"$V_{x}$ analytics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
 
             ax    = Axis(fig[3,3], aspect=DataAspect(), title=L"$V_{x}$ error", xlabel=L"x", ylabel=L"y")
             field = (ϵV.x)[inx_Vx,iny_Vx].*sc.σ
-            hm    = heatmap!(ax, X.v.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
+            hm    = heatmap!(ax, xv, yc, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
+            contour!(ax, xc, yc,  phases.c[inx_c,iny_c], color=:black)
             hidexdecorations!(ax)
             Colorbar(fig[4, 3], hm, label = L"$V_{x}$ analytics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
 
             ###########################
             ax    = Axis(fig[5,1], aspect=DataAspect(), title=L"$V_{x}$ numerics", xlabel=L"x", ylabel=L"y")
             field = (Vy_viz)[inx_Vx,iny_Vx].*sc.σ
-            hm    = heatmap!(ax, X.v.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
+            hm    = heatmap!(ax, xv, yc, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
+            contour!(ax, xc, yc,  phases.c[inx_c,iny_c], color=:black)
             hidexdecorations!(ax)
             Colorbar(fig[6, 1], hm, label = L"$V_{y}$ numerics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
             
             ax    = Axis(fig[5,2], aspect=DataAspect(), title=L"$V_{x}$ analytics", xlabel=L"x", ylabel=L"y")
             field = (V_ana.y)[inx_Vx,iny_Vx].*sc.σ
-            hm    = heatmap!(ax, X.c.x, X.v.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
+            hm    = heatmap!(ax, xc, yv, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
+            contour!(ax, xc, yc,  phases.c[inx_c,iny_c], color=:black)
             hidexdecorations!(ax)
             Colorbar(fig[6, 2], hm, label = L"$V_{y}$ analytics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
 
             ax    = Axis(fig[5,3], aspect=DataAspect(), title=L"$V_{x}$ error", xlabel=L"x", ylabel=L"y")
             field = (ϵV.y)[inx_Vy,iny_Vy].*sc.σ
-            hm    = heatmap!(ax, X.c.x, X.v.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
+            hm    = heatmap!(ax, xc, yv, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
+            contour!(ax, xc, yc,  phases.c[inx_c,iny_c], color=:black)
             hidexdecorations!(ax)
             Colorbar(fig[6, 3], hm, label = L"$V_{y}$ analytics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
 
@@ -356,10 +373,10 @@ using ExactFieldSolutions
         with_theme(figure, theme_latexfonts())
 
         # # Visulisation
-        # p3 = heatmap(X.v.x, X.c.y, ϵV.x[inx_Vx,iny_Vx]', aspect_ratio=1, xlim=extrema(X.v.x), title="Vx", color=:vik)
-        # p4 = heatmap(X.v.x, X.c.y, V.x[inx_Vx,iny_Vx]', aspect_ratio=1, xlim=extrema(X.v.x), title="Vx", color=:vik)
-        # # p4 = heatmap(X.c.x, X.v.y, V.y[inx_Vy,iny_Vy]', aspect_ratio=1, xlim=extrema(X.v.x), title="Vy", color=:vik)
-        # p2 = heatmap(X.c.x, X.c.y, Pt[inx_c,iny_c], aspect_ratio=1, xlim=extrema(X.v.x), title="Pt", color=:vik)
+        # p3 = heatmap(xv, yc, ϵV.x[inx_Vx,iny_Vx]', aspect_ratio=1, xlim=extrema(xv), title="Vx", color=:vik)
+        # p4 = heatmap(xv, yc, V.x[inx_Vx,iny_Vx]', aspect_ratio=1, xlim=extrema(xv), title="Vx", color=:vik)
+        # # p4 = heatmap(xc, yv, V.y[inx_Vy,iny_Vy]', aspect_ratio=1, xlim=extrema(xv), title="Vy", color=:vik)
+        # p2 = heatmap(xc, yc, Pt[inx_c,iny_c], aspect_ratio=1, xlim=extrema(xv), title="Pt", color=:vik)
         # p1 = plot(xlabel="Iterations @ step $(it) ", ylabel="log₁₀ error", legend=:topright, title="Convergence")
         # p1 = scatter!(1:niter, log10.(err.x[1:niter]), label="Vx")
         # p1 = scatter!(1:niter, log10.(err.y[1:niter]), label="Vy")

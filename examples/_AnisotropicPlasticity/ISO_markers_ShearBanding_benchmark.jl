@@ -116,8 +116,8 @@ end
     # Boundary loading type
     config = :free_slip
     ε̇bg = (5e-11) * sc.t
-    D_BC   = @SMatrix( [ ε̇bg 0.;
-                          0  -ε̇bg ]) 
+    D_BC   = @SMatrix( [ -ε̇bg 0.;
+                          0  ε̇bg ]) 
     bulk_rate = D_BC[4]
 
     # Materials initialization
@@ -281,11 +281,6 @@ end
             @warn "Invalid phase_ratios.center at $I: sum = $s, values = $(phase_ratios.center[I])"
         end
     end
-    # # Cut ghost cells
-    # phase_ratios = (
-    #     c   = phase_ratios.c[2:end-1,2:end-1],
-    #     v   = phase_ratios.v[2:end-1,2:end-1],
-    # )
 
     #------------------------------------------------------------------#
 

@@ -1,4 +1,3 @@
-# using BenchmarkTools
 abstract type AbstractPlasticity end
 
 Base.@kwdef struct DruckerPrager <: AbstractPlasticity
@@ -55,6 +54,7 @@ Base.@kwdef struct Golchin2021 <: AbstractPlasticity
     cosϕ::Vector{Float64} = Float64[]
     sinϕ::Vector{Float64} = Float64[]
     sinψ::Vector{Float64} = Float64[]
+    cosψ::Vector{Float64} = Float64[]
     M::Vector{Float64} = Float64[]
     N::Vector{Float64} = Float64[]
     Pc::Vector{Float64} = Float64[]
@@ -139,6 +139,7 @@ initialize(::Type{Golchin2021}, n::Integer) = Golchin2021(
     cosϕ=ones(n),
     sinϕ=ones(n),
     sinψ=ones(n),
+    cosψ=ones(n),
     M=ones(n),
     N=ones(n),
     Pc=ones(n),
@@ -156,6 +157,7 @@ initialize(::Type{Kiss2023}, n::Integer) = Kiss2023(
     cosϕ=ones(n),
     sinϕ=ones(n),
     sinψ=ones(n),
+    cosψ=ones(n),
     σT=ones(n),
     δσT=ones(n),
     P1=ones(n),
@@ -214,24 +216,34 @@ function preprocess!(da::DruckerAniso)
     @. da.cosϕ = cosd(da.ϕ)
     @. da.sinϕ = sind(da.ϕ)
     @. da.sinψ = sind(da.ψ)
+    @. da.cosψ = cosd(da.ψ)
 end
 
 function preprocess!(g::Golchin2021)
     @. g.cosϕ = cosd(g.ϕ)
     @. g.sinϕ = sind(g.ϕ)
     @. g.sinψ = sind(g.ψ)
+    @. g.cosψ = cosd(g.ψ)
+    @. g.M = 6 * sind(g.ϕ) / (3 - sind(g.ϕ))
+    @. g.N = 6 * sind(g.ψ) / (3 - sind(g.ψ))
+
 end
 
 function preprocess!(k::Kiss2023)
     @. k.cosϕ = cosd(k.ϕ)
     @. k.sinϕ = sind(k.ϕ)
     @. k.sinψ = sind(k.ψ)
+    @. k.P1 = -(k.σT - k.δσT)                                         # p at the intersection of cutoff and Mode-1
+    @. k.τ1 = k.δσT                                                           # τII at the intersection of cutoff and Mode-1
+    @. k.P2 = -(k.σT - k.C * cosd(k.ϕ)) / (1.0 - sind(k.ϕ)) # p at the intersection of Drucker-Prager and Mode-1
+    @. k.τ2 = k.P2 + k.σT
 end
 
 function preprocess!(t::Tensile)
     @. t.cosϕ = cosd(t.ϕ)
     @. t.sinϕ = sind(t.ϕ)
     @. t.sinψ = sind(t.ψ)
+    @. t.cosψ = cosd(t.ψ)
 end
 
 function preprocess!(mat::Materials)
@@ -242,10 +254,3 @@ end
 preprocess!(::NoPlasticity) = nothing
 
 preprocess(x) = (preprocess!(x); x)
-
-# let 
-#     materials     = initialize_materials( 2; compressible=true, plasticity=Golchin2021 )
-#     materials.η0 .= [1.0, 2.0] 
-#     @show materials
-#     @benchmark preprocess!($materials)
-# end

@@ -1,4 +1,4 @@
-using StagFDTools, StagFDTools.Stokes, StagFDTools.Rheology, ExtendableSparse, StaticArrays, Plots, LinearAlgebra, SparseArrays, Printf
+using StagFDTools, StagFDTools.Stokes, StagFDTools.Rheology, ExtendableSparse, StaticArrays, CairoMakie, LinearAlgebra, SparseArrays, Printf
 import Statistics:mean
 using DifferentiationInterface
 using TimerOutputs
@@ -29,43 +29,26 @@ end
                           0    1e-3 ])
 
     # Material parameters
-    materials = ( 
-        g     = [0.0   0.0],
-        compressible = true,
-        plasticity   = :Kiss2023,
-        ρ    = [0.0    0.0  ],
-        n    = [1.0    1.0  ],
-        η0   = [1e3    1e-1 ], 
-        G    = [1e1    1e1  ],
-        C    = [100.0  100.0],
-        σT   = [50.0   50.0 ], # Kiss2023
-        δσT  = [10.0   10.0 ], # Kiss2023
-        P1   = [0.0    0.0  ], # Kiss2023
-        τ1   = [0.0    0.0  ], # Kiss2023
-        P2   = [0.0    0.0  ], # Kiss2023
-        τ2   = [0.0    0.0  ], # Kiss2023
-        ϕ    = [30.0   30.0 ],
-        ηvp  = [0.1    0.1  ],
-        β    = [1e-2   1e-2 ],
-        ψ    = [3.0    3.0  ],
-        B    = [0.0    0.0  ],
-        cosϕ = [0.0    0.0  ],
-        sinϕ = [0.0    0.0  ],
-        sinψ = [0.0    0.0  ],
-    )
-    # For power law
-    @. materials.B  = (2*materials.η0)^(-materials.n)
-
-    # For plasticity
-    @. materials.cosϕ  = cosd(materials.ϕ)
-    @. materials.sinϕ  = sind(materials.ϕ)
-    @. materials.sinψ  = sind(materials.ψ)
+    # Materials initialization
+    nphases = 2
+    materials = initialize_materials(nphases; compressible=true, plasticity=Kiss2023)
     
-    # For Kiss2023: calculate corner coordinates 
-    @. materials.P1 = -(materials.σT - materials.δσT)                                         # p at the intersection of cutoff and Mode-1
-    @. materials.τ1 = materials.δσT                                                           # τII at the intersection of cutoff and Mode-1
-    @. materials.P2 = -(materials.σT - materials.C*cosd(materials.ϕ))/(1.0-sind(materials.ϕ)) # p at the intersection of Drucker-Prager and Mode-1
-    @. materials.τ2 = materials.P2 + materials.σT                                             # τII at the intersection of Drucker-Prager and Mode-1
+    materials.ρ    .= [0.0,    0.0  ]
+    materials.g     .= [0.0,   0.0]
+    materials.η0   .= [1e3,    1e-1 ]
+    materials.G    .= [1e1,   1e1  ]
+    materials.plasticity.C    .= [100.0,  100.0]
+    materials.plasticity.σT   .= [50.0,   50.0 ] # Kiss2023
+    materials.plasticity.δσT  .= [10.0,   10.0 ] # Kiss2023
+    materials.plasticity.P1   .= [0.0,    0.0  ] # Kiss2023
+    materials.plasticity.τ1   .= [0.0,    0.0  ] # Kiss2023
+    materials.plasticity.P2   .= [0.0,    0.0  ] # Kiss2023
+    materials.plasticity.ϕ    .= [30.0,   30.0 ]
+    materials.plasticity.ηvp  .= [0.1,    0.1  ]
+    materials.β    .= [1e-2,   1e-2 ]
+    materials.plasticity.ψ    .= [3.0,    3.0  ]
+    
+    preprocess!(materials)
 
     # Time steps
     Δt0   = 0.5
@@ -104,9 +87,7 @@ end
     # Stencil extent for each block matrix
     pattern = Fields(
         Fields(@SMatrix([1 1 1; 1 1 1; 1 1 1]),                 @SMatrix([0 1 1 0; 1 1 1 1; 1 1 1 1; 0 1 1 0]), @SMatrix([1 1 1; 1 1 1])), 
-        Fields(@SMatrix([0 1 1 0; 1 1 1 1; 1 1 1 1; 0 1 1 0    # Add a constrant pressure within a circular region
-    @views type.Pt[inx_c, iny_c][(xc.^2 .+ (yc').^2) .<= radius^2] .= :constant
-]),  @SMatrix([1 1 1; 1 1 1; 1 1 1]),                @SMatrix([1 1; 1 1; 1 1])), 
+        Fields(@SMatrix([0 1 1 0; 1 1 1 1; 1 1 1 1; 0 1 1 0 ]),  @SMatrix([1 1 1; 1 1 1; 1 1 1]),                @SMatrix([1 1; 1 1; 1 1])), 
         Fields(@SMatrix([0 1 0; 0 1 0]),                        @SMatrix([0 0; 1 1; 0 0]),                      @SMatrix([1]))
     )
 
@@ -134,6 +115,9 @@ end
     Vi      = (x  = zeros(size_x...), y  = zeros(size_y...))
     η       = (c  =  ones(size_c...), v  =  ones(size_v...) )
     ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
+    G = (c=zeros(size_c...), v=zeros(size_v...))
+    β = (c=zeros(size_c...), v=zeros(size_v...))
+    ρ = (c=zeros(size_c...), v=zeros(size_v...))
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
     ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
     τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
@@ -161,7 +145,8 @@ end
     @views V.x[inx_Vx,iny_Vx] .= D_BC[1,1]*xv .+ D_BC[1,2]*yc' 
     @views V.y[inx_Vy,iny_Vy] .= D_BC[2,1]*xc .+ D_BC[2,2]*yv'
     @views Pt[inx_c, iny_c ]  .= 0.
-    @views Pt[inx_c, iny_c][(xc.^2 .+ (yc').^2) .<= 0.1^2] .= 1.0     
+    @views Pt[inx_c, iny_c][(xc.^2 .+ (yc').^2) .<= 0.1^2] .= 1.0   
+     @views type.Pt[inx_c, iny_c][(xc.^2 .+ (yc').^2) .<= radius^2] .= :constant  
     UpdateSolution!(V, Pt, dx, number, type, nc)
 
     # Boundary condition values
@@ -180,6 +165,7 @@ end
     # Set material geometry 
     # @views phases.c[inx_c, iny_c][(xc.^2 .+ (yc').^2) .<= 0.1^2] .= 2
     # @views phases.v[inx_v, iny_v][(xv.^2 .+ (yv').^2) .<= 0.1^2] .= 2
+    phase_ratios=InitialisePhaseRatios(phases,nphases)
 
     #--------------------------------------------#
 
@@ -190,7 +176,8 @@ end
 
     #--------------------------------------------#
 
-    anim = @animate for it=1:nt
+    # anim = @animate 
+    for it=1:nt
 
         time += Δ.t
         @printf("Step %04d --- time = %1.3f \n", it, time)
@@ -206,6 +193,7 @@ end
 
         # Update pressure in the hole
         @views Pt[inx_c, iny_c][(xc.^2 .+ (yc').^2) .<= radius^2] .= 1 + 5*time     
+        compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, size_c, size_v, nphases)
 
         for iter=1:niter
 
@@ -214,12 +202,10 @@ end
             #--------------------------------------------#
             # Residual check        
             @timeit to "Residual" begin
-   TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
-                @show extrema(λ̇.c)
-                @show extrema(λ̇.v)
-                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ) 
-                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
-                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
+                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
+                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, ξ, materials, number, type, BC, nc, Δ) 
+                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
             end
 
             err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
@@ -234,9 +220,9 @@ end
             #--------------------------------------------#
             # Assembly
             @timeit to "Assembly" begin
-                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
+                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, ξ, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, ρ, materials, number, pattern, type, BC, nc, Δ)
             end
 
             #--------------------------------------------# 
@@ -257,10 +243,9 @@ end
 
             #--------------------------------------------#
             # Line search & solution update
-            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
-
+            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, ξ, ρ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_ratios, nc, Δ)
             UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
-            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
+            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
 
         end
 
@@ -280,14 +265,14 @@ end
 
         K      = 1 / materials.β[1]
         η_ve   = materials.G[1] * Δ.t
-        pc1    = materials.P1[1]
-        pc2    = materials.P2[1]
-        τc1    = materials.τ1[1]
-        τc2    = materials.τ2[1]
-        φ      = materials.ϕ[1]
-        C      = materials.C[1]
-        ψ      = materials.ψ[1]
-        η_vp   = materials.ηvp[1]
+        pc1    = materials.plasticity.P1[1]
+        pc2    = materials.plasticity.P2[1]
+        τc1    = materials.plasticity.τ1[1]
+        τc2    = materials.plasticity.τ2[1]
+        φ      = materials.plasticity.ϕ[1]
+        C      = materials.plasticity.C[1]
+        ψ      = materials.plasticity.ψ[1]
+        η_vp   = materials.plasticity.ηvp[1]
 
         l1    = line.(p_tr1, K, Δ.t, η_ve, 90., pc1, τc1)
         l2    = line.(p_tr2, K, Δ.t, η_ve, 90., pc2, τc2)
@@ -295,25 +280,34 @@ end
     
         P_end =  600
 
-        p3 = plot(aspect_ratio=1, xlabel="P", ylabel="τII")
-        p3 = plot!([pc1, pc1, pc2, P_end],[0.0, τc1, τc2, P_end*sind(φ)+C*cosd(φ)], label=:none)
-        p3 = plot!(p_tr1,  l1, label=:none)
-        p3 = plot!(p_tr2,  l2, label=:none)
-        p3 = plot!(p_tr3,  l3, label=:none)
-        p3 = scatter!( Pt[inx_c,iny_c][:], τII[:], label=:none)
+        fig = Figure(resolution = (1100,800))
 
-        p1 = heatmap(xv, yc, V.x[inx_Vx,iny_Vx]', aspect_ratio=1, xlim=extrema(xc), title="Vx")
-        p2 = heatmap(xc, yc,  Pt[inx_c,iny_c]', aspect_ratio=1, xlim=extrema(xc), title="Pt", c=:coolwarm, clims=(0,600))
-        p4 = heatmap(xc, yc,  log10.(ε̇II)', aspect_ratio=1, xlim=extrema(xc), title="ε̇II", c=:coolwarm)
-        # p4 = heatmap(xc, yc,  τII', aspect_ratio=1, xlim=extrema(xc), title="τII", c=:turbo)
-        p1 = plot(xlabel="Iterations @ step $(it) ", ylabel="log₁₀ error", legend=:topright)
-        p1 = scatter!(1:niter, log10.(err.x[1:niter]), label="Vx")
-        p1 = scatter!(1:niter, log10.(err.y[1:niter]), label="Vy")
-        p1 = scatter!(1:niter, log10.(err.p[1:niter]), label="Pt")
-        display(plot(p1, p2, p3, p4, layout=(2,2)))
+        # Top-left: nonlinear solver convergence (iterations)
+        ax_conv = Axis(fig[1,1], xlabel = "Iterations @ step $(it)", ylabel = "log₁₀ error")
+        lines!(ax_conv, 1:niter, log10.(err.x[1:niter]), color = :blue)
+        scatter!(ax_conv, 1:niter, log10.(err.y[1:niter]), color = :orange)
+        scatter!(ax_conv, 1:niter, log10.(err.p[1:niter]), color = :green)
+
+        # Top-right: pressure field
+        ax_pt = Axis(fig[1,2], title = "Pt")
+        heatmap!(ax_pt, xc, yc, Pt[inx_c,iny_c]')
+
+        # Bottom-left: yield/τII diagram
+        ax_yield = Axis(fig[2,1], xlabel = "P", ylabel = "τII", aspect = DataAspect())
+        lines!(ax_yield, [pc1, pc1, pc2, P_end], [0.0, τc1, τc2, P_end*sind(φ)+C*cosd(φ)], color = :black)
+        lines!(ax_yield, p_tr1, l1, color = :blue)
+        lines!(ax_yield, p_tr2, l2, color = :blue)
+        lines!(ax_yield, p_tr3, l3, color = :blue)
+        scatter!(ax_yield, vec(Pt[inx_c,iny_c]), vec(τII), color = :red)
+
+        # Bottom-right: strain-rate magnitude
+        ax_e = Axis(fig[2,2], title = "ε̇II")
+        heatmap!(ax_e, xc, yc, log10.(ε̇II)')
+
+        display(fig)
 
     end
-    gif(anim, "./results/PressurizedHole.gif", fps = 15)
+    # gif(anim, "./results/PressurizedHole.gif", fps = 15)
 
     display(to)
     

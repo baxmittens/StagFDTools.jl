@@ -22,43 +22,21 @@ end
                           0  1 ])
 
     # Material parameters
-    materials = ( 
-        g    = [0.0    0.0],
-        compressible = false,
-        plasticity   = :Kiss2023,
-        ρ    = [1.0    1.0    1.0  ],
-        n    = [1.0    1.0  ],
-        η0   = [1e3    1e-1 ], 
-        G    = [1e1    1e1  ],
-        C    = [100.0  100.0],
-        σT   = [50.0   50.0 ], # Kiss2023
-        δσT  = [10.0   10.0 ], # Kiss2023
-        P1   = [0.0    0.0  ], # Kiss2023
-        τ1   = [0.0    0.0  ], # Kiss2023
-        P2   = [0.0    0.0  ], # Kiss2023
-        τ2   = [0.0    0.0  ], # Kiss2023
-        ϕ    = [30.0   30.0 ],
-        ηvp  = [1.     1.   ],
-        β    = [1e-2   1e-2 ],
-        ψ    = [3.0    3.0  ],
-        B    = [0.0    0.0  ],
-        cosϕ = [0.0    0.0  ],
-        sinϕ = [0.0    0.0  ],
-        sinψ = [0.0    0.0  ],
-    )
-    # For power law
-    @. materials.B  = (2*materials.η0)^(-materials.n)
-
-    # For plasticity
-    @. materials.cosϕ  = cosd(materials.ϕ)
-    @. materials.sinϕ  = sind(materials.ϕ)
-    @. materials.sinψ  = sind(materials.ψ)
-    
-    # For Kiss2023: calculate corner coordinates 
-    @. materials.P1 = -(materials.σT - materials.δσT)                                         # p at the intersection of cutoff and Mode-1
-    @. materials.τ1 = materials.δσT                                                           # τII at the intersection of cutoff and Mode-1
-    @. materials.P2 = -(materials.σT - materials.C*cosd(materials.ϕ))/(1.0-sind(materials.ϕ)) # p at the intersection of Drucker-Prager and Mode-1
-    @. materials.τ2 = materials.P2 + materials.σT                                             # τII at the intersection of Drucker-Prager and Mode-1
+    nphases = 2
+    materials = initialize_materials(nphases; plasticity=Kiss2023, compressible=false)
+    materials.g   .= [0.0,  0.0]
+    materials.ρ   .= [1.0,  1.0]
+    materials.n   .= [1.0,  1.0]
+    materials.η0  .= [1e3,  1e-1]
+    materials.G   .= [1e1,  1e1]
+    materials.β   .= [1e-2, 1e-2]
+    materials.plasticity.C   .= [100.0, 100.0]
+    materials.plasticity.σT  .= [50.0,  50.0]
+    materials.plasticity.δσT .= [10.0,  10.0]
+    materials.plasticity.ϕ   .= [30.0,  30.0]
+    materials.plasticity.ηvp .= [1.0,   1.0]
+    materials.plasticity.ψ   .= [3.0,   3.0]
+    preprocess!(materials)
 
     # Time steps
     Δt0   = 0.5
@@ -127,6 +105,9 @@ end
     Vi      = (x  = zeros(size_x...), y  = zeros(size_y...))
     η       = (c  =  ones(size_c...), v  =  ones(size_v...) )
     ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
+    G       = (c  = zeros(size_c...), v  = zeros(size_v...) )
+    β       = (c  = zeros(size_c...), v  = zeros(size_v...) )
+    ρ       = (c  = zeros(size_c...), v  = zeros(size_v...) )
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
     ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
     τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
@@ -169,9 +150,10 @@ end
         BC.Vy[ end-1, iny_Vy] .= (type.Vy[ end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*xv[end] .+ D_BC[2,2]*yv)
     end
 
-    # Set material geometry 
+    # Set material geometry
     @views phases.c[inx_c, iny_c][(xc.^2 .+ (yc').^2) .<= 0.1^2] .= 2
     @views phases.v[inx_v, iny_v][(xv.^2 .+ (yv').^2) .<= 0.1^2] .= 2
+    phase_ratios = InitialisePhaseRatios(phases, nphases)
 
     #--------------------------------------------#
 
@@ -188,25 +170,27 @@ end
         fill!(err.y, 0e0)
         fill!(err.p, 0e0)
         
-        # Swap old values 
+        # Swap old values
         τ0.xx .= τ.xx
         τ0.yy .= τ.yy
         τ0.xy .= τ.xy
         Pt0   .= Pt
+
+        compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, size_c, size_v, nphases)
 
         for iter=1:niter
 
             @printf("Iteration %04d\n", iter)
 
             #--------------------------------------------#
-            # Residual check        
+            # Residual check
             @timeit to "Residual" begin
-   TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
+                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
                 @show extrema(λ̇.c)
                 @show extrema(λ̇.v)
-                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ) 
-                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
-                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
+                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, ξ, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
             end
 
             err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
@@ -221,9 +205,9 @@ end
             #--------------------------------------------#
             # Assembly
             @timeit to "Assembly" begin
-                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
+                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, ξ, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, ρ, materials, number, pattern, type, BC, nc, Δ)
             end
 
             #--------------------------------------------# 
@@ -244,10 +228,10 @@ end
 
             #--------------------------------------------#
             # Line search & solution update
-            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
+            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, ξ, ρ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_ratios, nc, Δ)
 
             UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
-            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
+            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
 
         end
 
@@ -267,14 +251,14 @@ end
 
         K      = 1 / materials.β[1]
         η_ve   = materials.G[1] * Δ.t
-        pc1    = materials.P1[1]
-        pc2    = materials.P2[1]
-        τc1    = materials.τ1[1]
-        τc2    = materials.τ2[1]
-        φ      = materials.ϕ[1]
-        C      = materials.C[1]
-        ψ      = materials.ψ[1]
-        η_vp   = materials.ηvp[1]
+        pc1    = materials.plasticity.P1[1]
+        pc2    = materials.plasticity.P2[1]
+        τc1    = materials.plasticity.τ1[1]
+        τc2    = materials.plasticity.τ2[1]
+        φ      = materials.plasticity.ϕ[1]
+        C      = materials.plasticity.C[1]
+        ψ      = materials.plasticity.ψ[1]
+        η_vp   = materials.plasticity.ηvp[1]
 
         l1    = line.(p_tr1, K, Δ.t, η_ve, 90., pc1, τc1)
         l2    = line.(p_tr2, K, Δ.t, η_ve, 90., pc2, τc2)
@@ -313,7 +297,7 @@ end
         # or save("my_figure.png", fig)
         ########################################
 
-        @show (3/materials.β[1] - 2*materials.G[1])/(2*(3/materials.β[1] + 2*materials.G[1]))
+        @show (3/materials.β[1] - 2*materials.G[1]) / (2*(3/materials.β[1] + 2*materials.G[1]))
 
     end
 
