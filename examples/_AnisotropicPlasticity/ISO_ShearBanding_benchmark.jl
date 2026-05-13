@@ -134,11 +134,10 @@ end
     materials.plasticity.ηvp .= [params_bg.ηvp , params_in.ηvp]
     materials.plasticity.ψ .= [params_bg.ψ , params_in.ψ]
     preprocess!(materials)
-    # materials.ρ .= [params_bg. , params_in.]
 
     # Time steps and bulk strain intervals
     Δt0    = 1e5/sc.t
-    nt     = 100
+    nt     = 40
     if flag.strain_int
         ε_bulk = LinRange(1e-4,3e-4,5)
         d = 1
@@ -298,9 +297,7 @@ end
             #--------------------------------------------#
             # Residual check
             @timeit to "Residual" begin
-               TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
-                @show extrema(λ̇.c)
-                @show extrema(λ̇.v)
+                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
                 ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, ξ, materials, number, type, BC, nc, Δ) 
                 ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
                 ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
@@ -455,7 +452,7 @@ end
 #---------------------------------------------------------------------------------------
 
 let 
-    resolution = [100]
+    resolution = [400]
     NY = 69 
     # z5 = plot(xlabel="x", ylabel="εᵢᵢ [10⁻³]", size = (700,300), title = "Accumulated strain across shear bands" )
 

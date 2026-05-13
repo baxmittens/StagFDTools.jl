@@ -1,3 +1,4 @@
+# using BenchmarkTools
 function InitialiseParticleField(nc, nmpc, L, Δ, materials, noise)
     nphases = length(materials.n)
     num = (x=nmpc.x * (nc.x + 2), y=nmpc.y * (nc.y + 2))
@@ -93,48 +94,113 @@ function PhaseRatios!(phase_ratios, phase_weights, m, mphase, xce, yce, xve, yve
 end
 
 function compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, size_c, size_v, nphases)
-    sum = (c=ones(size_c...), v=ones(size_v...))
-
-    for I in CartesianIndices(β.c)
-        i, j = I[1], I[2]
-        β.c[i, j] = 0.0
-        G.c[i, j] = 0.0
-        ρ.c[i, j] = 0.0
-        ξ.c[i, j] = 0.0
-        sum.c[i, j] = 0.0
-        for p = 1:nphases # loop on phases
-            if i > 1 && j > 1 && i < nc.x + 2 && j < nc.y + 2
-                phase_ratio = phase_ratios.c[i-1, j-1][p]
-                β.c[i, j] += phase_ratio * materials.β[p]
-                G.c[i, j] += phase_ratio * materials.G[p]
-                ρ.c[i, j] += phase_ratio * materials.ρ[p]
-                ξ.c[i, j] += phase_ratio * materials.ξ0[p]
-                sum.c[i, j] += phase_ratio
+    nxc, nyc = size(G.c)
+    @inbounds for j in 1:nyc, i in 1:nxc
+        if 1 < i < nc.x + 2 && 1 < j < nc.y + 2
+            βc = 0.0
+            Gc = 0.0
+            ρc = 0.0
+            ξc = 0.0
+            pr = phase_ratios.c[i-1, j-1]
+            for p = 1:nphases
+                r = pr[p]
+                βc += r * materials.β[p]
+                Gc += r * materials.G[p]
+                ρc += r * materials.ρ[p]
+                ξc += r * materials.ξ0[p]
             end
+            β.c[i, j] = βc
+            G.c[i, j] = Gc
+            ρ.c[i, j] = ρc
+            ξ.c[i, j] = ξc
+        else
+            β.c[i, j] = 0.0
+            G.c[i, j] = 0.0
+            ρ.c[i, j] = 0.0
+            ξ.c[i, j] = 0.0
         end
     end
-    G.c[[1 end], :] .= G.c[[2 end - 1], :]
-    G.c[:, [1 end]] .= G.c[:, [2 end - 1]]
-    β.c[[1 end], :] .= β.c[[2 end - 1], :]
-    β.c[:, [1 end]] .= β.c[:, [2 end - 1]]
-    ρ.c[[1 end], :] .= ρ.c[[2 end - 1], :]
-    ρ.c[:, [1 end]] .= ρ.c[:, [2 end - 1]]
-    ξ.c[[1 end], :] .= ξ.c[[2 end - 1], :]
-    ξ.c[:, [1 end]] .= ξ.c[:, [2 end - 1]]
 
-    for I in CartesianIndices(G.v)
-        i, j = I[1], I[2]
-        G.v[i, j] = 0.0
-        sum.v[i, j] = 0.0
-        for p = 1:nphases # loop on phases
-            if i > 1 && j > 1 && i < nc.x + 3 && j < nc.y + 3
-                phase_ratio = phase_ratios.v[i-1, j-1][p]
-                G.v[i, j] += phase_ratio * materials.G[p]
-                sum.v[i, j] += phase_ratio
+    @inbounds for j in 1:nyc
+        G.c[1, j] = G.c[2, j]
+        G.c[nxc, j] = G.c[nxc-1, j]
+        β.c[1, j] = β.c[2, j]
+        β.c[nxc, j] = β.c[nxc-1, j]
+        ρ.c[1, j] = ρ.c[2, j]
+        ρ.c[nxc, j] = ρ.c[nxc-1, j]
+        ξ.c[1, j] = ξ.c[2, j]
+        ξ.c[nxc, j] = ξ.c[nxc-1, j]
+    end
+    @inbounds for i in 1:nxc
+        G.c[i, 1] = G.c[i, 2]
+        G.c[i, nyc] = G.c[i, nyc-1]
+        β.c[i, 1] = β.c[i, 2]
+        β.c[i, nyc] = β.c[i, nyc-1]
+        ρ.c[i, 1] = ρ.c[i, 2]
+        ρ.c[i, nyc] = ρ.c[i, nyc-1]
+        ξ.c[i, 1] = ξ.c[i, 2]
+        ξ.c[i, nyc] = ξ.c[i, nyc-1]
+    end
+
+    nxv, nyv = size(G.v)
+    @inbounds for j in 1:nyv, i in 1:nxv
+        if 1 < i < nc.x + 3 && 1 < j < nc.y + 3
+            Gv = 0.0
+            pr = phase_ratios.v[i-1, j-1]
+            for p = 1:nphases
+                Gv += pr[p] * materials.G[p]
             end
+            G.v[i, j] = Gv
+        else
+            G.v[i, j] = 0.0
         end
     end
-    G.v[[1 end], :] .= G.v[[2 end - 1], :]
-    G.v[:, [1 end]] .= G.v[:, [2 end - 1]]
-    @show extrema(sum.c[2:end-1, 2:end-1]), extrema(sum.v[2:end-1, 2:end-1])
+
+    @inbounds for j in 1:nyv
+        G.v[1, j] = G.v[2, j]
+        G.v[nxv, j] = G.v[nxv-1, j]
+    end
+    @inbounds for i in 1:nxv
+        G.v[i, 1] = G.v[i, 2]
+        G.v[i, nyv] = G.v[i, nyv-1]
+    end
+    return nothing
 end
+
+# let
+#     # Benchmarking section to check for allocations
+#     using BenchmarkTools
+
+#     # Setup test data
+#     nc = (x=10, y=10)
+#     nmpc = (x=5, y=5)
+#     L = (x=100.0, y=100.0)
+#     Δ = (x=1.0, y=1.0)
+
+#     # Create simple test materials
+#     nphases = 2
+#     materials = (
+#         n=[0.3, 0.7],
+#         β=[1e-5, 2e-5],
+#         G=[1e10, 5e9],
+#         ρ=[2700.0, 2500.0],
+#         ξ0=[1e21, 5e20]
+#     )
+
+#     # Initialize particle field
+#     m = InitialiseParticleField(nc, nmpc, L, Δ, materials, false)
+
+#     # Initialize phase ratios
+#     phase_ratios, phase_weights = InitialisePhaseRatios(m, (xx=rand(1:nphases, nc.x + 2, nc.y + 2), xy=rand(1:nphases, nc.x + 2, nc.y + 2)))
+
+#     # Create grid fields
+#     size_c = (nc.x + 2, nc.y + 2)
+#     size_v = (nc.x + 3, nc.y + 3)
+#     β = (c=zeros(size_c...), v=zeros(size_v...))
+#     G = (c=zeros(size_c...), v=zeros(size_v...))
+#     ρ = (c=zeros(size_c...), v=zeros(size_v...))
+#     ξ = (c=zeros(size_c...), v=zeros(size_v...))
+
+#     # Benchmark compute_grid_fields!
+#     result = @benchmark compute_grid_fields!($G, $β, $ρ, $ξ, $materials, $phase_ratios, $nc, $size_c, $size_v, $nphases)
+# end

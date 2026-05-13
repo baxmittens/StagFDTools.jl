@@ -1,3 +1,4 @@
+# using BenchmarkTools
 function line(p, K, dt, η_ve, ψ, p1, t1)
     p2 = p1 + K * dt * sind(ψ)  # introduce sinϕ ?
     t2 = t1 - η_ve
@@ -340,8 +341,8 @@ function LocalRheology(ε̇, Dkk, P0, materials, phase_ratios, Δ)
 
     η_average = zero(ε̇II)
     λ̇_average = zero(ε̇II)
-    P_average  = zero(ε̇II)
-    τ_average  = zero(ε̇II)
+    P_average = zero(ε̇II)
+    τ_average = zero(ε̇II)
 
     for phases = 1:nphases
 
@@ -697,3 +698,36 @@ end
 
 LocalRheology_phase_ratios(args...) = LocalRheology(args...)
 StressVector_phase_ratios!(args...) = StressVector!(args...)
+
+# let
+#     nphases = 2
+#     materials = (
+#         n=[1.0, 1.0],
+#         η0=[1e2, 1e-1],
+#         B=[0.0, 0.0],
+#         G=[1e1, 1e1],
+#         β=[1e-2, 1e-2],
+#         compressible=true,
+#         phase_avg=:arithmetic,
+#         plasticity=DruckerPrager(
+#             C=[150.0, 150.0],
+#             cosϕ=[cosd(30.0), cosd(30.0)],
+#             sinϕ=[sind(30.0), sind(30.0)],
+#             cosψ=[cosd(3.0), cosd(3.0)],
+#             sinψ=[sind(3.0), sind(3.0)],
+#             ηvp=[0.5, 0.5]
+#         )
+#     )
+
+#     # Create phase ratios
+#     phase_ratios = [0.5, 0.5]
+
+#     # Create test strain rate (4 components)
+#     ε̇ = @SVector([1e-15, 1e-15, 1e-15, 0.0])
+
+#     # Create other parameters
+#     Dkk = 0.0
+#     P0 = 1.0e6
+#     Δ = (t=0.5,)
+#     @benchmark LocalRheology($ε̇, $Dkk, $P0, $materials, $phase_ratios, $Δ)
+# end

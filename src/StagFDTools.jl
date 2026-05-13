@@ -50,7 +50,7 @@ include("Poisson.jl")
 export Fields, Ranges, Numbering!, SparsityPattern!
 end
 module Stokes
-using LinearAlgebra, StaticArrays, ExtendableSparse, StaticArrays, StagFDTools, StagFDTools.Rheology
+using LinearAlgebra, StaticArrays, ExtendableSparse, StaticArrays, StagFDTools, StagFDTools.Rheology, DifferentiationInterface
 include("Stokes.jl")
 export Fields, Ranges, Numbering!, SparsityPattern!, SetRHS!, UpdateSolution!, SetBCVx!, SetBCVy!, set_boundaries_template!, SetBCVx1, SetBCVy1
 export Continuity, SMomentum_x_Generic, SMomentum_y_Generic

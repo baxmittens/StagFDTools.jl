@@ -1,3 +1,4 @@
+# using BenchmarkTools
 abstract type AbstractPlasticity end
 
 Base.@kwdef struct DruckerPrager <: AbstractPlasticity
@@ -241,3 +242,10 @@ end
 preprocess!(::NoPlasticity) = nothing
 
 preprocess(x) = (preprocess!(x); x)
+
+# let 
+#     materials     = initialize_materials( 2; compressible=true, plasticity=Golchin2021 )
+#     materials.η0 .= [1.0, 2.0] 
+#     @show materials
+#     @benchmark preprocess!($materials)
+# end

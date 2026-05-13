@@ -355,15 +355,6 @@ end
 
 function AssembleMomentum2D_x!(K, V, P, P0, ΔP, τ0, 𝐷, G, materials, num, pattern, type, BC, nc, Δ)
 
-    ∂R∂Vx = @MMatrix zeros(3, 3)
-    ∂R∂Vy = @MMatrix zeros(4, 4)
-    ∂R∂Pt = @MMatrix zeros(2, 3)
-
-    Vx_loc = @MMatrix zeros(3, 3)
-    Vy_loc = @MMatrix zeros(4, 4)
-    P_loc = @MMatrix zeros(2, 3)
-    ΔP_loc = @MMatrix zeros(2, 1)
-
     shift = (x=1, y=2)
     for j in 1+shift.y:nc.y+shift.y
         for i in 1+shift.x:nc.x+shift.x+1
@@ -917,7 +908,6 @@ end
 @views function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
 
     _ones = @SVector ones(4)
-    D_test = @MMatrix ones(4, 4)
     s = 1
     invΔx, invΔy = 1 / Δ.x, 1 / Δ.y
 
@@ -939,6 +929,13 @@ end
 
     # periodic_west  = sum(any(i->i==:periodic, type.Vx[1,3:end-2], dims=2)) > 0 
     # periodic_south = sum(any(i->i==:periodic, type.Vx[3:end-2,2], dims=1)) > 0 
+
+    # Prepare jacobian
+    _stress_fn = let mat = materials, d = Δ
+        (z, kk, p0, phr) -> first(StressVector!(z, kk, p0, mat, phr, d))
+    end
+    _jac_prep = prepare_jacobian(_stress_fn, AUTO_DIFF_BACKEND, zero(SVector{4,Float64}),
+        Constant(0.0), Constant(0.0), Constant(phase_ratios.c[2, 2]))
 
     # Loop over centroids
     Threads.@threads for j = 1+s:size(ε̇.xx, 2)-s
@@ -979,14 +976,12 @@ end
                 # Effective visco-elastic strain rate
                 _2GΔt = inv(2 * G.c[i, j] * Δ.t)
                 ϵ̇xx, ϵ̇yy, ϵ̇xy = effective_strain_rate(ε̇xx, ε̇yy, ε̇xy, τ0xx, τ0yy, τ0xy, _2GΔt)
-                ε̇vec = @SVector([ϵ̇xx, ϵ̇yy, ϵ̇xy, Pt[i, j]])
+                ε̇vec = SVector{4}(ϵ̇xx, ϵ̇yy, ϵ̇xy, Pt[i, j])
 
                 # Tangent operator used for Newton Linearisation
-                stress_state = StressVector!(ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.c[i, j], Δ)
-                τ_vec, jac = ad_jacobian_first(StressVector!, ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.c[i, j], Δ)
-                _, η_local, λ̇_local, τII_local = stress_state
-
-                @views 𝐷_ctl.c[i, j] .= jac
+                τ_vec, η_local, λ̇_local, τII_local = StressVector!(ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.c[i, j], Δ)
+                jacobian!(_stress_fn, 𝐷_ctl.c[i, j], _jac_prep, AUTO_DIFF_BACKEND, ε̇vec,
+                    Constant(ε̇kk), Constant(Pt0[i, j]), Constant(phase_ratios.c[i, j]))
 
                 # Tangent operator used for Picard Linearisation
                 𝐷.c[i, j] .= diagm(2 * η_local * _ones)
@@ -1078,14 +1073,12 @@ end
             # Effective visco-elastic strain rate
             _2GΔt = inv(2 * G.v[i, j] * Δ.t)
             ϵ̇xx, ϵ̇yy, ϵ̇xy = effective_strain_rate(ε̇xx, ε̇yy, ε̇xy, τ0xx, τ0yy, τ0xy, _2GΔt)
-            ε̇vec = @SVector([ϵ̇xx, ϵ̇yy, ϵ̇xy, P̄])
+            ε̇vec = SVector{4}(ϵ̇xx, ϵ̇yy, ϵ̇xy, P̄)
 
             # Tangent operator used for Newton Linearisation
-            stress_state = StressVector!(ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.v[i, j], Δ) #!!!!!!!!!!!!! come prima
-            τ_vec, jac = ad_jacobian_first(StressVector!, ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.v[i, j], Δ)
-            _, η_local, λ̇_local, = stress_state
-
-            @views 𝐷_ctl.v[i, j] .= jac
+            τ_vec, η_local, λ̇_local, = StressVector!(ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.v[i, j], Δ)
+            jacobian!(_stress_fn, 𝐷_ctl.v[i, j], _jac_prep, AUTO_DIFF_BACKEND, ε̇vec,
+                Constant(ε̇kk), Constant(Pt0[i, j]), Constant(phase_ratios.v[i, j]))
 
             # Tangent operator used for Picard Linearisation
             𝐷.v[i, j] .= diagm(2 * η_local * _ones)

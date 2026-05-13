@@ -116,12 +116,13 @@ end
     # Boundary loading type
     config = :free_slip
     ε̇bg = (5e-11) * sc.t
-    D_BC   = @SMatrix( [ -ε̇bg 0.;
-                          0  ε̇bg ]) 
+    D_BC   = @SMatrix( [ ε̇bg 0.;
+                          0  -ε̇bg ]) 
     bulk_rate = D_BC[4]
 
     # Materials initialization
-    materials = initialize_materials(2; plasticity=DruckerPrager,compressible=true)
+    nphases = 2
+    materials = initialize_materials(nphases; plasticity=DruckerPrager,compressible=true)
     
     # Parameters
     params_bg = (ρ=1.0, n=1.0, η0=2e50, G=1.0, C=1.74e-4, ϕ=30., ηvp=2e3, β=0.5, ψ=10., ε̇=5e-11, rad=25e-4)
