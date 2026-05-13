@@ -1,7 +1,7 @@
 using DifferentiationInterface
 
 const AUTO_DIFF_BACKEND = AutoForwardDiff()
-export ad_jacobian_first, gradient, AUTO_DIFF_BACKEND
+export ad_jacobian_first, gradient, gradient!, prepare_gradient, prepare_jacobian, jacobian!, Constant, AUTO_DIFF_BACKEND
 
 struct ConstArg{T}
     value::T

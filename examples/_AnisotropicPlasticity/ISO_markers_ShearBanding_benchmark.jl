@@ -108,7 +108,7 @@ end
 
     # Markers
     nmpc = (x = 4, y = 4)
-    noise = true
+    noise = false
 
     # Scaling
     sc = (σ = 1, L = 1, t = 1)

@@ -452,7 +452,7 @@ end
 #---------------------------------------------------------------------------------------
 
 let 
-    resolution = [400]
+    resolution = [100]
     NY = 69 
     # z5 = plot(xlabel="x", ylabel="εᵢᵢ [10⁻³]", size = (700,300), title = "Accumulated strain across shear bands" )
 
