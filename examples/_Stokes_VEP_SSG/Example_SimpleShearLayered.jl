@@ -96,6 +96,7 @@ import CairoMakie as cm
     Vi = (x=zeros(size_x...), y=zeros(size_y...))
     η = (c=ones(size_c...), v=ones(size_v...))
     G = (c=zeros(size_c...), v=zeros(size_v...))
+    ξ = (c=zeros(size_c...), v=zeros(size_v...))
     β = (c=zeros(size_c...), v=zeros(size_v...))
     ρ = (c=zeros(size_c...), v=zeros(size_v...))
     λ̇ = (c=zeros(size_c...), v=zeros(size_v...))
@@ -177,7 +178,7 @@ import CairoMakie as cm
         Pt0 .= Pt
 
         # Compute bulk and shear moduli
-        compute_grid_fields!(G, β, ρ, materials, phase_ratios, nc, size_c, size_v, nphases)
+        compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, size_c, size_v, nphases)
 
         for iter = 1:niter
 
@@ -187,7 +188,7 @@ import CairoMakie as cm
             # Residual check        
             @timeit to "Residual" begin
                 TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
-                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, materials, number, type, BC, nc, Δ)
+                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, ξ, materials, number, type, BC, nc, Δ)
                 ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
                 ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
             end
@@ -204,9 +205,9 @@ import CairoMakie as cm
             #--------------------------------------------#
             # Assembly
             @timeit to "Assembly" begin
-                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, materials, number, pattern, type, BC, nc, Δ)
+                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, ξ, materials, number, pattern, type, BC, nc, Δ)
                 AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, ρ, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, ρ, materials, number, pattern, type, BC, nc, Δ)
             end
 
             #--------------------------------------------# 
@@ -227,11 +228,9 @@ import CairoMakie as cm
 
             #--------------------------------------------#
             # Line search & solution update
-            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, ρ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_ratios, nc, Δ)
-
+            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, ξ, ρ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_ratios, nc, Δ)
             UpdateSolution!(V, Pt, α[imin] * dx, number, type, nc)
             TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
-
         end
 
         # Update pressure
