@@ -28,8 +28,8 @@ using TimerOutputs
     materials                 = preprocess_materials( materials_properties )
 
     # Time steps
-    Δt0   = 0.175
-    nt    = 40
+    Δt0   = 0.175/4
+    nt    = 15*4
 
     # Newton solver
     niter    = 20     # max. number of non-linear iters
@@ -37,7 +37,7 @@ using TimerOutputs
     ϵ_l      = 1e-11  # linear solver tolerance
     ϵ_nl     = 1e-9   # non-linear solver tolerance
     inexact  = false  # inexact Newton
-    Pic2Newt = 1.3    # more than 1.0 - always Newton
+    Pic2Newt = 1e10   # more than 1.0 - always Newton
     solver   = :GCR   # :GCR or :PH
     α        = LinRange(0.05, 1.0, 6)
 
@@ -294,5 +294,5 @@ using TimerOutputs
 end
 
 let
-    main((x = 101, y = 101))
+    main((x = 401, y = 401))
 end
