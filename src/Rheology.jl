@@ -201,16 +201,18 @@ function NonLinearReturnMapping(τII, P, ε̇_eff, Dkk, P0, ηve, β, Δt, plast
         δx    = - J \ R
         nR    = abs(R[3])
 
+        x .= x0 .+  1*δx
+
         # α = bt_line_search(δx, J.derivs[1], x0, J.val, trial, plastic, model)
         # x .= x0 .+  α*δx
 
-        for ils in eachindex(αvec)
-            x .= x0 .+  αvec[ils]δx
-            R = RheologyResidual(x, trial, plastic, model)           
-            Fvec[ils] = norm(R) 
-        end
-        ibest = argmin(Fvec)
-        x .= x0 .+  αvec[ibest]*δx
+        # for ils in eachindex(αvec)
+        #     x .= x0 .+  αvec[ils]δx
+        #     R = RheologyResidual(x, trial, plastic, model)           
+        #     Fvec[ils] = norm(R) 
+        # end
+        # ibest = argmin(Fvec)
+        # x .= x0 .+  αvec[ibest]*δx
 
         # @show iter, nR,  αvec[ibest], x
 
