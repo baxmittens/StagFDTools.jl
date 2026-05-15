@@ -3,8 +3,6 @@
 #---------------------------------------------------------------------------------------
 using StagFDTools, StagFDTools.Stokes, StagFDTools.Rheology, ExtendableSparse, StaticArrays, Plots, LinearAlgebra, SparseArrays, Printf
 import Statistics:mean
-using DifferentiationInterface
-using Enzyme  # AD backends you want to use
 using TimerOutputs
 using MAT
 using Plots
@@ -112,7 +110,7 @@ end
 
     # Boundary loading type
     config = :free_slip
-    ε̇bg = (5e-11) * sc.t
+    ε̇bg = (5e-10) * sc.t
     D_BC   = @SMatrix( [ -ε̇bg 0.;
                           0  ε̇bg ]) 
     bulk_rate = D_BC[4]
@@ -123,19 +121,19 @@ end
         plasticity   = :DruckerPrager,
         g    = [0.0,    0.0 ],
         ρ    = [0.0,    0.0 ],
-        n    = [1.0    1.0  ],
-        η0   = [2e50    2e50 ]./sc.t./sc.σ, 
+        n    = [1.0,    1.0  ],
+        η0   = [2e50,    2e50 ]./sc.t./sc.σ, 
         ξ0   = [1e60,   1e60   ]./sc.σ/sc.t,
-        G    = [1.0    0.25  ]./sc.σ,
-        C    = [1.74e-4    1.74e-4 ]./sc.σ,
-        ϕ    = [30.    30.  ],
-        ηvp  = [2e3    2e3  ]./sc.t./sc.σ,
-        β    = [0.5   0.5 ]./sc.σ,
-        ψ    = [10.0    10.0  ],
-        B    = [0.0    0.0  ],
-        cosϕ = [0.0    0.0  ],
-        sinϕ = [0.0    0.0  ],
-        sinψ = [0.0    0.0  ],
+        G    = [1.0,    0.25  ]./sc.σ,
+        C    = [1.74e-4,    1.74e-4 ]./sc.σ,
+        ϕ    = [30.,    30.  ],
+        ηvp  = [2e3,    2e3  ]./sc.t./sc.σ,
+        β    = [0.5,   0.5 ]./sc.σ,
+        ψ    = [10.0,    10.0  ],
+        B    = [0.0,    0.0  ],
+        cosϕ = [0.0,    0.0  ],
+        sinϕ = [0.0,    0.0  ],
+        sinψ = [0.0,    0.0  ],
     )
     # For power law
     materials.B   .= (2*materials.η0).^(-materials.n)
