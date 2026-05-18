@@ -44,10 +44,17 @@ end
             x = LinRange(x.min, x.max, nc.x+1),
             y = LinRange(y.min+Δ.y/2, y.max-Δ.y/2, nc.y),
         ),
+        vx_e = (
+            x = LinRange(x.min-Δ.x, x.max+Δ.x, nc.x+3),
+            y = LinRange(y.min-3/2*Δ.y, y.max+3/2*Δ.y, nc.y+4),
+        ),
         vy = (
             x = LinRange(x.min+Δ.x/2, x.max-Δ.x/2, nc.x),
             y = LinRange(y.min, y.max, nc.y+1),
-
+        ),
+        vy_e = (
+            x = LinRange(x.min-3/2*Δ.x, x.max+3/2*Δ.x, nc.x+4),
+            y = LinRange(y.min-Δ.y, y.max+Δ.y, nc.y+3),
         )
     )
 

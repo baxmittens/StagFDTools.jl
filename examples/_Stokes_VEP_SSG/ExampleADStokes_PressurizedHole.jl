@@ -142,8 +142,8 @@ end
     phases  = (c= ones(Int64, size_c...), v= ones(Int64, size_v...))  # phase on velocity points
 
     # Initial velocity & pressure field
-    @views V.x[inx_Vx,iny_Vx] .= D_BC[1,1]*xv .+ D_BC[1,2]*yc' 
-    @views V.y[inx_Vy,iny_Vy] .= D_BC[2,1]*xc .+ D_BC[2,2]*yv'
+    @views V.x .= D_BC[1,1]*X.vx_e.x .+ D_BC[1,2]*X.vx_e.y' 
+    @views V.y .= D_BC[2,1]*X.vy_e.x .+ D_BC[2,2]*X.vy_e.y'
     @views Pt[inx_c, iny_c ]  .= 0.
     @views Pt[inx_c, iny_c][(xc.^2 .+ (yc').^2) .<= 0.1^2] .= 1.0   
      @views type.Pt[inx_c, iny_c][(xc.^2 .+ (yc').^2) .<= radius^2] .= :constant  
