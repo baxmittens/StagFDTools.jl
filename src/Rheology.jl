@@ -344,6 +344,17 @@ function LocalRheology(ε̇, Dkk, P0, materials, phases, Δ)
     ηvep = inv(1/η + 1/(G*Δ.t))
     τII  = 2*ηvep*ε̇II
 
+    λ̇ = 0.0
+    F    = τII - C*cosϕ - P*sinϕ - λ̇*ηvp
+    # if F > 1e-10
+    #     @info "yield"
+    #     @show τII, ε̇II, ε̇
+    #     error()
+    # else
+    #     # @show τII, ε̇II, ε̇
+    #     # error()
+    # end
+
     # Visco-elastic powerlaw
     for it=1:20
         r      = ε̇II - StrainRateTrial(τII, G, Δ.t, B, n)

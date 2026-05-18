@@ -903,6 +903,7 @@ end
     s = 1 
     invΔx, invΔy = 1/Δ.x, 1/Δ.y
 
+    # Detect periodicity E/W
     periodic_west = false
     @inbounds @views for i in 3:size(type.Vx,2)-2
         if type.Vx[1,i] === :periodic
@@ -911,6 +912,7 @@ end
         end
     end
 
+    # Detect periodicity N/S
     periodic_south = false
     @inbounds @views for i in 3:size(type.Vx,1)-2
         if type.Vx[i,2] === :periodic
@@ -1065,6 +1067,15 @@ end
             _2GΔt = inv(2 * G * Δ.t)
             ϵ̇xx, ϵ̇yy, ϵ̇xy = effective_strain_rate(ε̇xx, ε̇yy, ε̇xy, τ0xx, τ0yy, τ0xy, _2GΔt)
             ε̇vec  = @SVector([ϵ̇xx, ϵ̇yy, ϵ̇xy, P̄])
+
+            # if abs(ε̇vec[1]>1e-4)
+                # display(typex)
+                # display(bcx)
+                # display(Vx)
+                # display(V̄x)
+                # display(Δ.x)
+                # display( ε̇vec )
+            # end
 
             # Tangent operator used for Newton Linearisation
             stress_state = StressVector!(ε̇vec, ε̇kk, Pt0[i,j], materials, phases.v[i,j], Δ)

@@ -23,36 +23,19 @@ using TimerOutputs, CairoMakie
                           0.   ε̇bg ])    
 
     # Material parameters
-    materials = ( 
-        compressible = true,
-        plasticity   = :DruckerPrager,
-        # plasticity   = :Hyperbolic,
-        #       rock   seed   
-        g    = [0.0,    0.0 ],
-        ρ    = [0.0,    0.0 ],
-        n    = [1.0,    1.0    ],            # Power law exponent
-        η0   = [1e30,   1e30   ]./sc.σ/sc.t, # Reference viscosity 
-        ξ0   = [1e60,   1e60   ]./sc.σ/sc.t,
-        G    = [1e10,   0.25e10]./sc.σ,      # Shear modulus
-        C    = [3e7,    3e7    ]./sc.σ,      # Cohesion
-        σT   = [5e6,    5.0e6  ]./sc.σ,  # Kiss2023 / Tensile / Hyperbolic
-        ϕ    = [30.,    30.    ],            # Friction angle
-        ψ    = [10.,    10.0   ],            # Dilation angle
-        ηvp  = [1e19,   1e19   ].*0.0./sc.σ/sc.t, # Viscoplastic regularisation
-        β    = [5e-11,  5e-11  ].*sc.σ,      # Compressibility
-        B    = [0.0,    0.0    ],            # (calculated after) power-law creep pre-factor
-        cosϕ = [0.0,    0.0    ],            # (calculated after) frictional parameters
-        sinϕ = [0.0,    0.0    ],            # (calculated after) frictional parameters
-        sinψ = [0.0,    0.0    ],            # (calculated after) frictional parameters
-    )
-    # For power law
-    materials.B   .= (2*materials.η0).^(-materials.n)
+    materials_properties      = initialize_materials( 2, compressible = true, plasticity = :DruckerPrager )
+    materials_properties.n   .= [1.0,    1.0    ]            # Power law exponent
+    materials_properties.η0  .= [1e30,   1e30   ]./sc.σ/sc.t # Reference viscosity 
+    materials_properties.ξ0  .= [1e60,   1e60   ]./sc.σ/sc.t
+    materials_properties.G   .= [1e10,   0.25e10]./sc.σ      # Shear modulus
+    materials_properties.C   .= [3e7,    3e7    ]./sc.σ      # Cohesion
+    materials_properties.σT  .= [5e6,    5.0e6  ]./sc.σ  # Kiss2023 / Tensile / Hyperbolic
+    materials_properties.ϕ   .= [30.,    30.    ]            # Friction angle
+    materials_properties.ψ   .= [10.,    10.0   ]            # Dilation angle
+    materials_properties.ηvp .= [1e19,   1e19   ].*0.0./sc.σ/sc.t # Viscoplastic regularisation
+    materials_properties.β   .= [5e-11,  5e-11  ].*sc.σ      # Compressibility
+    materials                 = preprocess_materials( materials_properties )
 
-    # For plasticity
-    @. materials.cosϕ  = cosd(materials.ϕ)
-    @. materials.sinϕ  = sind(materials.ϕ)
-    @. materials.sinψ  = sind(materials.ψ)
-    
     # Geometry
     seed = (
         Ellipse((0.0, -1e3/sc.L), 100/sc.L, 100/sc.L; θ = 0.0),
@@ -147,15 +130,13 @@ using TimerOutputs, CairoMakie
     𝐷_ctl   = (c = D_ctl_c, v = D_ctl_v)
 
     # Mesh coordinates
-    xv = LinRange( x.min,       x.max,       nc.x+1)
-    yv = LinRange( y.min,       y.max,       nc.y+1)
-    xc = LinRange( x.min+Δ.x/2, x.max-Δ.x/2, nc.x  )
-    yc = LinRange( y.min+Δ.y/2, y.max-Δ.y/2, nc.y  )
+    X  = GenerateGrid(x, y, Δ, nc)
     phases  = (c= ones(Int64, size_c...), v= ones(Int64, size_v...))  # phase on velocity points
 
     # Initial velocity & pressure field
-    @views V.x[inx_Vx,iny_Vx] .= D_BC[1,1]*xv .+ D_BC[1,2]*yc' 
-    @views V.y[inx_Vy,iny_Vy] .= D_BC[2,1]*xc .+ D_BC[2,2]*yv'
+    @show size(V.x), size(X.v_e.x), size(X.c_e.y)
+    @views V.x .= D_BC[1,1]*X.vx_e.x .+ D_BC[1,2]*X.vx_e.y' 
+    @views V.y .= D_BC[2,1]*X.vy_e.x .+ D_BC[2,2]*X.vy_e.y'
     @views Pt[inx_c, iny_c ]  .= 10.                 
     UpdateSolution!(V, Pt, dx, number, type, nc)
 
@@ -164,17 +145,17 @@ using TimerOutputs, CairoMakie
     @views begin
         BC.Vx[     2, iny_Vx] .= (type.Vx[     1, iny_Vx] .== :Neumann_normal) .* D_BC[1,1]
         BC.Vx[ end-1, iny_Vx] .= (type.Vx[   end, iny_Vx] .== :Neumann_normal) .* D_BC[1,1]
-        BC.Vx[inx_Vx,      2] .= (type.Vx[inx_Vx,      2] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx,     2] .== :Dirichlet_tangent) .* (D_BC[1,1]*xv .+ D_BC[1,2]*yv[1]  )
-        BC.Vx[inx_Vx,  end-1] .= (type.Vx[inx_Vx,  end-1] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx, end-1] .== :Dirichlet_tangent) .* (D_BC[1,1]*xv .+ D_BC[1,2]*yv[end])
+        BC.Vx[inx_Vx,      2] .= (type.Vx[inx_Vx,      2] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx,     2] .== :Dirichlet_tangent) .* (D_BC[1,1]*X.v.x .+ D_BC[1,2]*X.v.y[1]  )
+        BC.Vx[inx_Vx,  end-1] .= (type.Vx[inx_Vx,  end-1] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx, end-1] .== :Dirichlet_tangent) .* (D_BC[1,1]*X.v.x .+ D_BC[1,2]*X.v.y[end])
         BC.Vy[inx_Vy,     2 ] .= (type.Vy[inx_Vy,     1 ] .== :Neumann_normal) .* D_BC[2,2]
         BC.Vy[inx_Vy, end-1 ] .= (type.Vy[inx_Vy,   end ] .== :Neumann_normal) .* D_BC[2,2]
-        BC.Vy[     2, iny_Vy] .= (type.Vy[     2, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[    2, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*xv[1]   .+ D_BC[2,2]*yv)
-        BC.Vy[ end-1, iny_Vy] .= (type.Vy[ end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*xv[end] .+ D_BC[2,2]*yv)
+        BC.Vy[     2, iny_Vy] .= (type.Vy[     2, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[    2, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*X.v.x[1]   .+ D_BC[2,2]*X.v.y)
+        BC.Vy[ end-1, iny_Vy] .= (type.Vy[ end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*X.v.x[end] .+ D_BC[2,2]*X.v.y)
     end
 
     # Set material geometry 
     for i in inx_c, j in iny_c   # loop on centroids
-        𝐱 = @SVector([xc[i-1], yc[j-1]])
+        𝐱 = @SVector([X.c_e.x[i], X.c_e.y[j]])
 
         for igeom in eachindex(seed) # seed
             if inside(𝐱, seed[igeom])
@@ -184,7 +165,7 @@ using TimerOutputs, CairoMakie
     end
 
     for i in inx_c, j in iny_c  # loop on vertices
-        𝐱 = @SVector([xv[i-1], yv[j-1]])
+        𝐱 = @SVector([X.v_e.x[i], X.v_e.y[j]])
 
         for igeom in eachindex(seed) # seed
             if inside(𝐱, seed[igeom])
@@ -272,13 +253,11 @@ using TimerOutputs, CairoMakie
             @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
 
             UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
-            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
 
         end
 
         # Update pressure
-        Pt  .+= ΔPt.c
-
+        Pt .+= ΔPt.c
         λ.c .= λ̇.c 
         λ.v .= λ̇.v 
 
@@ -349,14 +328,14 @@ using TimerOutputs, CairoMakie
         function figure()
             fig = Figure()
             ax  = Axis(fig[1:1,1], aspect=DataAspect(), title="Pressure", xlabel="x", ylabel="y")
-            # heatmap!(ax, xc, yc,  log10.(λ̇.c[inx_c,iny_c]), colormap=:bluesreds)
-            # contour!(ax, xc, yc,  phases.c[inx_c,iny_c], color=:black)
-            heatmap!(ax, xc, yc, Pt[inx_c,iny_c]*sc.σ, colormap=:jet, colorrange=(-6e6, 4e6))
-            # heatmap!(ax, xc, yc, bifurc.detA[inx_c,iny_c], colormap=:jet)
+            # heatmap!(ax, X.c.x, X.c.y,  log10.(λ̇.c[inx_c,iny_c]), colormap=:bluesreds)
+            # contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
+            heatmap!(ax, X.c.x, X.c.y, Pt[inx_c,iny_c]*sc.σ, colormap=:jet, colorrange=(-6e6, 4e6))
+            # heatmap!( ax, X.v_e.x, X.v_e.y, λ̇.v )
+            # heatmap!(ax, X.c.x, X.c.y, bifurc.detA[inx_c,iny_c], colormap=:jet)
 
-            st = 10
-            # arrows!(ax, xc[1:st:end], yc[1:st:end], σ1.x[inx_c,iny_c][1:st:end,1:st:end], σ1.y[inx_c,iny_c][1:st:end,1:st:end], arrowsize = 0, lengthscale=0.04, linewidth=2, color=:white)
-            
+            # st = 10
+            # arrows!(ax, X.c.x[1:st:end], X.c.y[1:st:end], σ1.x[inx_c,iny_c][1:st:end,1:st:end], σ1.y[inx_c,iny_c][1:st:end,1:st:end], arrowsize = 0, lengthscale=0.04, linewidth=2, color=:white)
             ax  = Axis(fig[2,1], xlabel="Iterations @ step $(it) ", ylabel=L"$\log_{10}$ error")
             scatter!(ax, 1:niter, log10.(err.x[1:niter]./err.x[1]) )
             scatter!(ax, 1:niter, log10.(err.y[1:niter]./err.y[1]) )
@@ -382,5 +361,5 @@ using TimerOutputs, CairoMakie
 end
 
 let
-    main((x = 200, y = 100))
+    main((x = 150, y = 75))
 end
