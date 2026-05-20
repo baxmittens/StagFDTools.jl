@@ -165,26 +165,26 @@ using TimerOutputs
     # @views phases.c[:, [2,end-1]] .= 3  # Use linear material along Neumann boundaries
     phase_ratios = InitialisePhaseRatios(phases, nphases)
 
-    # Markers 
+    # # Markers 
 
-    # Initialise marker field
-    m = InitialiseParticleField(nc, nmpc, L, Δ, x, y, noise)
-    phase_ratios, phase_weights = InitialisePhaseRatios(nphases, ε̇)
+    # # Initialise marker field
+    # m = InitialiseParticleField(nc, nmpc, L, Δ, x, y, noise)
+    # phase_ratios, phase_weights = InitialisePhaseRatios(nphases, ε̇)
 
-    # Set material geometry: circle
-    # ccord = (x=-L.x/2, y=-L.y/2)
-    m.phase[(m.Xm.^2 .+ m.Ym.^2) .<= 0.1^2] .= 2
+    # # Set material geometry: circle
+    # # ccord = (x=-L.x/2, y=-L.y/2)
+    # m.phase[(m.Xm.^2 .+ m.Ym.^2) .<= 0.1^2] .= 2
 
-    # Set phase ratios
-    SetPhaseRatios!(phase_ratios, phase_weights, m, X.c_e.x, X.c_e.y, X.v_e.x, X.v_e.y, Δ, nphases)
+    # # Set phase ratios
+    # SetPhaseRatios!(phase_ratios, phase_weights, m, X.c_e.x, X.c_e.y, X.v_e.x, X.v_e.y, Δ, nphases)
     
-    # check 
-    for I in CartesianIndices(phase_ratios.c)
-        s = sum(phase_ratios.c[I])
-        if !(s ≈ 1.0)
-            @warn "Invalid phase_ratios.c at $I: sum = $s, values = $(phase_ratios.c[I])"
-        end
-    end
+    # # check 
+    # for I in CartesianIndices(phase_ratios.c)
+    #     s = sum(phase_ratios.c[I])
+    #     if !(s ≈ 1.0)
+    #         @warn "Invalid phase_ratios.c at $I: sum = $s, values = $(phase_ratios.c[I])"
+    #     end
+    # end
 
     #--------------------------------------------#
 
@@ -229,38 +229,6 @@ using TimerOutputs
                 ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
                 ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
             end
-            fig = Figure(size=(900,700), fontsize=14)
-
-        ax1 = Axis(fig[1,1], xlabel="Iterations @ step $(it)", ylabel="log₁₀ error", title="Convergence")
-        scatter!(ax1, 1:iter, log10.(err.x[1:iter]), markersize=6, label="Vx")
-        scatter!(ax1, 1:iter, log10.(err.y[1:iter]), markersize=6, label="Vy")
-        axislegend(ax1, position=:rt)
-
-        ax2 = Axis(fig[1,2], title="Vx", aspect=DataAspect())
-        heatmap!(ax2, X.v.x, X.v.y, V.x[inx_Vx,iny_Vx]')
-        xlims!(ax2, extrema(X.v.x))
-
-        ax3 = Axis(fig[2,1], title="ε̇II", aspect=DataAspect())
-        hm3 = heatmap!(ax3, X.c.x, X.c.y, log10.(ε̇.II[inx_c,iny_c])'; colormap=:coolwarm, colorrange=(-0.4,0.4))
-        xlims!(ax3, extrema(X.c.x))
-        Colorbar(fig[2,1, Right()], hm3, width=12)
-
-        ax4 = Axis(fig[2,2], title="P", aspect=DataAspect())
-        hm4 = heatmap!(ax4, X.c.x, X.c.y, Pt[inx_c,iny_c]'; colormap=:turbo)
-        xlims!(ax4, extrema(X.c.x))
-        Colorbar(fig[2,2, Right()], hm4, width=12)
-
-        # ax3 = Axis(fig[2,1], title="η c", aspect=DataAspect())
-        # hm3 = heatmap!(ax3, X.c.x, X.c.y, η.c[inx_c,iny_c]; colormap=:coolwarm)
-        # xlims!(ax3, extrema(X.c.x))
-        # Colorbar(fig[2,1, Right()], hm3, width=12)
-
-        # ax4 = Axis(fig[2,2], title="η v", aspect=DataAspect())
-        # hm4 = heatmap!(ax4, X.v.x, X.v.y, η.v[inx_v,iny_v]'; colormap=:coolwarm)
-        # xlims!(ax4, extrema(X.c.x))
-        # Colorbar(fig[2,2, Right()], hm4, width=12)
-
-        display(fig)
 
             err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
             err.y[iter] = @views norm(R.y[inx_Vy,iny_Vy])/sqrt(nVy)
@@ -281,9 +249,9 @@ using TimerOutputs
                 AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
                 AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, ρ, materials, number, pattern, type, BC, nc, Δ)
                 # Preconditioner
-                AssembleContinuity2D!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, ξ, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_x!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, ρ, materials, number, pattern, type, BC, nc, Δ)
+                AssembleContinuity2D!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, ξ, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_x!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, pattern, type, BC, nc, Δ)
             end
             #--------------------------------------------# 
             # Stokes operator as block matrices
@@ -324,38 +292,28 @@ using TimerOutputs
         Pt .+= ΔPt.c
 
         #--------------------------------------------#
-        # fig = Figure(size=(900,700), fontsize=14)
+        fig = Figure(size=(900,700), fontsize=14)
 
-        # ax1 = Axis(fig[1,1], xlabel="Iterations @ step $(it)", ylabel="log₁₀ error", title="Convergence")
-        # scatter!(ax1, 1:iter, log10.(err.x[1:iter]), markersize=6, label="Vx")
-        # scatter!(ax1, 1:iter, log10.(err.y[1:iter]), markersize=6, label="Vy")
-        # axislegend(ax1, position=:rt)
+        ax1 = Axis(fig[1,1], xlabel="Iterations @ step $(it)", ylabel="log₁₀ error", title="Convergence")
+        scatter!(ax1, 1:iter, log10.(err.x[1:iter]), markersize=6, label="Vx")
+        scatter!(ax1, 1:iter, log10.(err.y[1:iter]), markersize=6, label="Vy")
+        axislegend(ax1, position=:rt)
 
-        # ax2 = Axis(fig[1,2], title="Vx", aspect=DataAspect())
-        # heatmap!(ax2, X.v.x, X.v.y, V.x[inx_Vx,iny_Vx]')
-        # xlims!(ax2, extrema(X.v.x))
+        ax2 = Axis(fig[1,2], title="Vx", aspect=DataAspect())
+        heatmap!(ax2, X.v.x, X.v.y, V.x[inx_Vx,iny_Vx]')
+        xlims!(ax2, extrema(X.v.x))
 
-        # # ax3 = Axis(fig[2,1], title="ε̇II", aspect=DataAspect())
-        # # hm3 = heatmap!(ax3, X.c.x, X.c.y, log10.(ε̇.II[inx_c,iny_c])'; colormap=:coolwarm, colorrange=(-0.4,0.4))
-        # # xlims!(ax3, extrema(X.c.x))
-        # # Colorbar(fig[2,1, Right()], hm3, width=12)
+        ax3 = Axis(fig[2,1], title="ε̇II", aspect=DataAspect())
+        hm3 = heatmap!(ax3, X.c.x, X.c.y, log10.(ε̇.II[inx_c,iny_c])'; colormap=:coolwarm, colorrange=(-0.4,0.4))
+        xlims!(ax3, extrema(X.c.x))
+        Colorbar(fig[2,1, Right()], hm3, width=12)
 
-        # # ax4 = Axis(fig[2,2], title="τxx", aspect=DataAspect())
-        # # hm4 = heatmap!(ax4, X.c.x, X.c.y, τ.xx[inx_c,iny_c]'; colormap=:turbo)
-        # # xlims!(ax4, extrema(X.c.x))
-        # # Colorbar(fig[2,2, Right()], hm4, width=12)
+        ax4 = Axis(fig[2,2], title="τxx", aspect=DataAspect())
+        hm4 = heatmap!(ax4, X.c.x, X.c.y, τ.xx[inx_c,iny_c]'; colormap=:turbo)
+        xlims!(ax4, extrema(X.c.x))
+        Colorbar(fig[2,2, Right()], hm4, width=12)
 
-        # ax3 = Axis(fig[2,1], title="η c", aspect=DataAspect())
-        # hm3 = heatmap!(ax3, X.c.x, X.c.y, η.c[inx_c,iny_c]; colormap=:coolwarm)
-        # xlims!(ax3, extrema(X.c.x))
-        # Colorbar(fig[2,1, Right()], hm3, width=12)
-
-        # ax4 = Axis(fig[2,2], title="η v", aspect=DataAspect())
-        # hm4 = heatmap!(ax4, X.v.x, X.v.y, η.v[inx_v,iny_v]'; colormap=:coolwarm)
-        # xlims!(ax4, extrema(X.c.x))
-        # Colorbar(fig[2,2, Right()], hm4, width=12)
-
-        # display(fig)
+        display(fig)
 
         @show (3/materials.β[1] - 2*materials.G[1])/(2*(3/materials.β[1] + 2*materials.G[1]))
 

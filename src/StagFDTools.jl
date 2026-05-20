@@ -19,7 +19,7 @@ export inn, inn_x, inn_y, av, avx, avy, harm, ∂x, ∂y, ∂x_inn, ∂y_inn, �
 export deviatoric_strain_rate, effective_strain_rate
 
 include("Utils.jl")
-export GenerateGrid, printxy, av2D
+export GenerateGrid, printxy, av2D, Plot_Tangent_Operator
 
 include("Solvers.jl")
 export DecoupledSolver, KSP_GCR_Stokes!, mechanical_solver!, linear_tol

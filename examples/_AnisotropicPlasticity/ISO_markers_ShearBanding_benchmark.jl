@@ -237,6 +237,7 @@ end
     D_ctl_c =  [@MMatrix(zeros(4,4)) for _ in axes(ε̇.xx,1), _ in axes(ε̇.xx,2)]
     D_ctl_v =  [@MMatrix(zeros(4,4)) for _ in axes(ε̇.xy,1), _ in axes(ε̇.xy,2)]
     𝐷_ctl   = (c = D_ctl_c, v = D_ctl_v)
+    phases  = (c= ones(Int64, size_c...), v= ones(Int64, size_v...))
 
     # Mesh coordinates
     Grid = GenerateGrid(x,y,Δ,nc)
@@ -281,6 +282,13 @@ end
             @warn "Invalid phase_ratios.c at $I: sum = $s, values = $(phase_ratios.c[I])"
         end
     end
+
+    # # NO Markers
+    # # Material geometry
+    # ccord = (x=-L.x/2, y=-L.y/2)
+    # @views phases.c[inx_c, iny_c][((Grid.c.x .-ccord.x).^2 .+ ((Grid.c.y').-ccord.y).^2) .<= (params_bg.rad)] .= 2
+    # @views phases.v[inx_v, iny_v][((Grid.v.x .-ccord.x).^2 .+ ((Grid.v.y').-ccord.y).^2) .<= (params_bg.rad)] .= 2
+    # phase_ratios = InitialisePhaseRatios(phases, nphases)
 
     #------------------------------------------------------------------#
 
@@ -389,10 +397,10 @@ end
         # Plot fields
          if flag.fields
             fig_fields = Figure(size=(1000, 800))
-            ax1 = Axis(fig_fields[1, 1], aspect=DataAspect())
-            ax2 = Axis(fig_fields[1, 3], aspect=DataAspect())
-            ax3 = Axis(fig_fields[2, 1], aspect=DataAspect())
-            ax4 = Axis(fig_fields[2, 3], aspect=DataAspect())
+            ax1 = Axis(fig_fields[1, 1], aspect=DataAspect(), title = "time step $it")
+            ax2 = Axis(fig_fields[1, 3], aspect=DataAspect(), title = "time step $it")
+            ax3 = Axis(fig_fields[2, 1], aspect=DataAspect(), title = "time step $it")
+            ax4 = Axis(fig_fields[2, 3], aspect=DataAspect(), title = "time step $it")
 
             hm1 = heatmap!(ax1, Grid.v.x, Grid.c.y, (V.x[inx_Vx,iny_Vx]').*1e9./sc.t)
             hm2 = heatmap!(ax2, Grid.c.x, Grid.c.y, (Pt[inx_c,iny_c]').*1e4.*sc.σ; colormap=:turbo)
@@ -477,7 +485,7 @@ end
 #---------------------------------------------------------------------------------------
 
 let 
-    resolution = [100]
+    resolution = [400]
     NY = 69 
     # z5 = plot(xlabel="x", ylabel="εᵢᵢ [10⁻³]", size = (700,300), title = "Accumulated strain across shear bands" )
 
