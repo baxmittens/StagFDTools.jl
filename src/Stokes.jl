@@ -310,7 +310,6 @@ function Continuity(Vx, Vy, Pt, Pt0, D, β, ξ, materials, type_loc, bcv_loc, Δ
     invΔt = 1 / Δ.t
     comp = materials.compressible
     f = ((Vx[2, 2] - Vx[1, 2]) * invΔx + (Vy[2, 2] - Vy[2, 1]) * invΔy) + comp * β * (Pt[1] - Pt0) * invΔt + comp * Pt[1] / ξ
-    f *= max(invΔx, invΔy)
     return f
 end
 
@@ -932,12 +931,12 @@ end
     # periodic_west  = sum(any(i->i==:periodic, type.Vx[1,3:end-2], dims=2)) > 0 
     # periodic_south = sum(any(i->i==:periodic, type.Vx[3:end-2,2], dims=1)) > 0 
 
-    # Prepare jacobian
-    _stress_fn = let mat = materials, d = Δ
-        (z, kk, p0, phr) -> first(StressVector!(z, kk, p0, mat, phr, d))
-    end
-    _jac_prep = prepare_jacobian(_stress_fn, AUTO_DIFF_BACKEND, zero(SVector{4,Float64}),
-        Constant(0.0), Constant(0.0), Constant(phase_ratios.c[2, 2]))
+    # # Prepare jacobian
+    # _stress_fn = let mat = materials, d = Δ
+    #     (z, kk, p0, phr) -> first(StressVector!(z, kk, p0, mat, phr, d))
+    # end
+    # _jac_prep = prepare_jacobian(_stress_fn, AUTO_DIFF_BACKEND, zero(SVector{4,Float64}),
+    #     Constant(0.0), Constant(0.0), Constant(phase_ratios.c[2, 2]))
 
     # Loop over centroids
     Threads.@threads for j = 1+s:size(ε̇.xx, 2)-s
@@ -981,9 +980,14 @@ end
                 ε̇vec = SVector{4}(ϵ̇xx, ϵ̇yy, ϵ̇xy, Pt[i, j])
 
                 # Tangent operator used for Newton Linearisation
-                τ_vec, η_local, λ̇_local, τII_local = StressVector!(ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.c[i, j], Δ)
-                jacobian!(_stress_fn, 𝐷_ctl.c[i, j], _jac_prep, AUTO_DIFF_BACKEND, ε̇vec,
-                    Constant(ε̇kk), Constant(Pt0[i, j]), Constant(phase_ratios.c[i, j]))
+                # τ_vec, η_local, λ̇_local, τII_local = StressVector!(ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.c[i, j], Δ)
+                # jacobian!(_stress_fn, 𝐷_ctl.c[i, j], _jac_prep, AUTO_DIFF_BACKEND, ε̇vec,
+                #     Constant(ε̇kk), Constant(Pt0[i, j]), Constant(phase_ratios.c[i, j]))
+                stress_state = StressVector!(ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.c[i, j], Δ)
+                τ_vec, jac = ad_jacobian_first(StressVector!, ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.c[i, j], Δ)
+                _, η_local, λ̇_local, τII_local = stress_state
+
+                @views 𝐷_ctl.c[i, j] .= jac
 
                 # Tangent operator used for Picard Linearisation
                 𝐷.c[i, j] .= diagm(2 * η_local * _ones)
@@ -1078,18 +1082,23 @@ end
             ε̇vec = SVector{4}(ϵ̇xx, ϵ̇yy, ϵ̇xy, P̄)
 
             # if abs(ε̇vec[1]>1e-4)
-                # display(typex)
-                # display(bcx)
-                # display(Vx)
-                # display(V̄x)
-                # display(Δ.x)
-                # display( ε̇vec )
+            # display(typex)
+            # display(bcx)
+            # display(Vx)
+            # display(V̄x)
+            # display(Δ.x)
+            # display( ε̇vec )
             # end
 
             # Tangent operator used for Newton Linearisation
-            τ_vec, η_local, λ̇_local, = StressVector!(ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.v[i, j], Δ)
-            jacobian!(_stress_fn, 𝐷_ctl.v[i, j], _jac_prep, AUTO_DIFF_BACKEND, ε̇vec,
-                Constant(ε̇kk), Constant(Pt0[i, j]), Constant(phase_ratios.v[i, j]))
+            # τ_vec, η_local, λ̇_local, = StressVector!(ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.v[i, j], Δ)
+            # jacobian!(_stress_fn, 𝐷_ctl.v[i, j], _jac_prep, AUTO_DIFF_BACKEND, ε̇vec,
+            #     Constant(ε̇kk), Constant(Pt0[i, j]), Constant(phase_ratios.v[i, j]))
+            stress_state = StressVector!(ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.v[i, j], Δ)
+            τ_vec, jac = ad_jacobian_first(StressVector!, ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.v[i, j], Δ)
+            _, η_local, λ̇_local, = stress_state
+
+            @views 𝐷_ctl.v[i, j] .= jac
 
             # Tangent operator used for Picard Linearisation
             𝐷.v[i, j] .= diagm(2 * η_local * _ones)

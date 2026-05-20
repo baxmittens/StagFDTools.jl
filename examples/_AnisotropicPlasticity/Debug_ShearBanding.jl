@@ -3,6 +3,37 @@ import Statistics:mean
 using DifferentiationInterface
 using TimerOutputs
 
+function Plot_Tangent_Operator(𝐷, Grid)
+    
+    Fig_D = Figure(size = (1600, 1600))
+
+    titles = [
+        "∂τxx∂εxx" "" "∂τxx∂εyy" "" "∂τxx∂εxy" "" "∂τxx∂εkk" "";
+        "∂τyy∂εxx" "" "∂τyy∂εyy" "" "∂τyy∂εxy" "" "∂τyy∂εkk" "";
+        "∂τxy∂εxx" "" "∂τxy∂εyy" "" "∂τxy∂εxy" "" "∂τxy∂εkk" "";
+        "∂P∂εxx"  ""  "∂P∂εyy"  ""  "∂P∂εxy"  ""  "∂P∂εkk" ""
+    ]
+
+    nx, ny = size(𝐷)
+    comps = [zeros(nx, ny) for _ in 1:4, _ in 1:4]
+
+    for I in CartesianIndices(𝐷)
+        Dloc = 𝐷[I]
+        for i in 1:4, j in 1:4
+            comps[i, j][I] = Dloc[i, j]
+        end
+    end
+
+    for i in 1:4, j in 1:2:7
+        jc = (j + 1) ÷ 2                      # 1,3,5,7 → 1,2,3,4 for comps
+        ax = Axis(Fig_D[i, j], title = titles[i, j],
+                  xlabel = "x", ylabel = "y", aspect = DataAspect())
+        hm = heatmap!(ax, Grid.x, Grid.y, comps[i, jc], colormap = :turbo)
+        Colorbar(Fig_D[i, j + 1], hm)
+    end
+    return Fig_D
+end
+
 @views function main(nc)
     #--------------------------------------------#
 
@@ -231,24 +262,24 @@ using TimerOutputs
             end
             fig = Figure(size=(900,700), fontsize=14)
 
-        ax1 = Axis(fig[1,1], xlabel="Iterations @ step $(it)", ylabel="log₁₀ error", title="Convergence")
-        scatter!(ax1, 1:iter, log10.(err.x[1:iter]), markersize=6, label="Vx")
-        scatter!(ax1, 1:iter, log10.(err.y[1:iter]), markersize=6, label="Vy")
-        axislegend(ax1, position=:rt)
+        # ax1 = Axis(fig[1,1], xlabel="Iterations @ step $(it)", ylabel="log₁₀ error", title="Convergence")
+        # scatter!(ax1, 1:iter, log10.(err.x[1:iter]), markersize=6, label="Vx")
+        # scatter!(ax1, 1:iter, log10.(err.y[1:iter]), markersize=6, label="Vy")
+        # axislegend(ax1, position=:rt)
 
-        ax2 = Axis(fig[1,2], title="Vx", aspect=DataAspect())
-        heatmap!(ax2, X.v.x, X.v.y, V.x[inx_Vx,iny_Vx]')
-        xlims!(ax2, extrema(X.v.x))
+        # ax2 = Axis(fig[1,2], title="Vx", aspect=DataAspect())
+        # heatmap!(ax2, X.v.x, X.v.y, V.x[inx_Vx,iny_Vx]')
+        # xlims!(ax2, extrema(X.v.x))
 
-        ax3 = Axis(fig[2,1], title="ε̇II", aspect=DataAspect())
-        hm3 = heatmap!(ax3, X.c.x, X.c.y, log10.(ε̇.II[inx_c,iny_c])'; colormap=:coolwarm, colorrange=(-0.4,0.4))
-        xlims!(ax3, extrema(X.c.x))
-        Colorbar(fig[2,1, Right()], hm3, width=12)
+        # ax3 = Axis(fig[2,1], title="ε̇II", aspect=DataAspect())
+        # hm3 = heatmap!(ax3, X.c.x, X.c.y, log10.(ε̇.II[inx_c,iny_c])'; colormap=:coolwarm, colorrange=(-0.4,0.4))
+        # xlims!(ax3, extrema(X.c.x))
+        # Colorbar(fig[2,1, Right()], hm3, width=12)
 
-        ax4 = Axis(fig[2,2], title="P", aspect=DataAspect())
-        hm4 = heatmap!(ax4, X.c.x, X.c.y, Pt[inx_c,iny_c]'; colormap=:turbo)
-        xlims!(ax4, extrema(X.c.x))
-        Colorbar(fig[2,2, Right()], hm4, width=12)
+        # ax4 = Axis(fig[2,2], title="P", aspect=DataAspect())
+        # hm4 = heatmap!(ax4, X.c.x, X.c.y, Pt[inx_c,iny_c]'; colormap=:turbo)
+        # xlims!(ax4, extrema(X.c.x))
+        # Colorbar(fig[2,2, Right()], hm4, width=12)
 
         # ax3 = Axis(fig[2,1], title="η c", aspect=DataAspect())
         # hm3 = heatmap!(ax3, X.c.x, X.c.y, η.c[inx_c,iny_c]; colormap=:coolwarm)
@@ -260,7 +291,8 @@ using TimerOutputs
         # xlims!(ax4, extrema(X.c.x))
         # Colorbar(fig[2,2, Right()], hm4, width=12)
 
-        display(fig)
+        Fig_D = Plot_Tangent_Operator(𝐷_ctl.c, X.c)
+        display(Fig_D)
 
             err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
             err.y[iter] = @views norm(R.y[inx_Vy,iny_Vy])/sqrt(nVy)

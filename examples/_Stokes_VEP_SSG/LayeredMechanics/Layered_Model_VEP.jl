@@ -171,20 +171,19 @@ end
 
     # MARKERS ------------------------------------------------------------
     # Initialise markers and derive phase ratios from markers #        |
-    m = InitialiseParticleField(nc, nmpc, L, Δ, materials, noise) #    |
-    phase_ratios, phase_weights = InitialisePhaseRatios(m, ε̇) #        |
-    mphase = ones(Int64, m.num...) #                                   |
-    |
+    m = InitialiseParticleField(nc, nmpc, L, Δ, x, y, noise) #    |
+    phase_ratios, phase_weights = InitialisePhaseRatios(nphases, ε̇) #        |                                   |
+    # |
     # Assign marker phases from layering geometry (1 or 2) #           |
-    for I in CartesianIndices(mphase) #                                |
+    for I in CartesianIndices(m.phase) #                                |
         xm = m.Xm[I]
         ym = m.Ym[I]
         isin = inside(@SVector([xm, ym]), layering)
-        mphase[I] = isin ? 2 : 1
+        m.phase[I] = isin ? 2 : 1
     end
 
     # Build extended vertex arrays (with ghost vertices) and accumulate marker contributions
-    SetPhaseRatios!(phase_ratios, phase_weights, m, mphase, Grid.c_e.x, Grid.c_e.y, Grid.v_e.x, Grid.v_e.y, Δ)
+    SetPhaseRatios!(phase_ratios, phase_weights, m, Grid.c_e.x, Grid.c_e.y, Grid.v_e.x, Grid.v_e.y, Δ, nphases)
 
     # # NO MARKERS: --------------------------------------------------------
     # for i in inx_c, j in iny_c   # loop on centroids                     |

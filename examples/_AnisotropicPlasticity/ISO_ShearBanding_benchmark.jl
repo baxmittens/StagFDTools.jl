@@ -120,7 +120,7 @@ end
     nphases = 2
     materials = initialize_materials(nphases; plasticity=DruckerPrager,compressible=true)
     # Parameters
-    params_bg = (ρ=1.0, n=1.0, η0=2e50, G=1.0, C=1.74e-4, ϕ=30., ηvp=2.5e2, β=0.5, ψ=10., ε̇=5e-11, rad=5e-3)
+    params_bg = (ρ=1.0, n=1.0, η0=2e50, G=1.0, C=1.74e-4, ϕ=30., ηvp=2.5e2, β=0.5, ψ=10., ε̇=5e-11, rad=25e-4)
     params_in = (ρ=1.0, n=1.0, η0=2e50, G=0.25, C=1.74e-4, ϕ=30., ηvp=2.5e2, β=0.5, ψ=10.)
 
     materials.g .= [0. , 0.]

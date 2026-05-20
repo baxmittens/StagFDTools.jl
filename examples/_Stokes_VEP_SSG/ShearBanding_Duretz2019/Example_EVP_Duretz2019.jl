@@ -23,7 +23,7 @@ end
 function section(εII, Δ, nc, materials, L)
 
     # Angle of the section: Roscoe angle
-    θ = 45. - (materials.ϕ[1] + materials.ψ[1])/4
+    θ = 45. - (materials.plasticity.ϕ[1] + materials.plasticity.ψ[1])/4
     # θrad = deg2rad(θ)
 
     # Section initialisation
@@ -116,43 +116,32 @@ end
     bulk_rate = D_BC[4]
 
     # Material parameters
-    materials = ( 
-        compressible = true,
-        plasticity   = :DruckerPrager1,
-        g    = [0.0,    0.0 ],
-        ρ    = [0.0,    0.0 ],
-        n    = [1.0,    1.0  ],
-        η0   = [2e50,   2e50 ]./sc.t./sc.σ, 
-        ξ0   = [1e60,   1e60   ]./sc.σ/sc.t,
-        G    = [1.0,    0.25  ]./sc.σ,
-        C    = [1.74e-4,    1.74e-4 ]./sc.σ,
-        ϕ    = [30.,    30.  ],
-        ηvp  = [2e3,    2e3  ]./sc.t./sc.σ,
-        β    = [0.5,   0.5 ]./sc.σ,
-        ψ    = [10.0,    10.0  ],
-        B    = [0.0,    0.0  ],
-        cosϕ = [0.0,    0.0  ],
-        sinϕ = [0.0,    0.0  ],
-        sinψ = [0.0,    0.0  ],
-    )
-    # For power law
-    materials.B   .= (2*materials.η0).^(-materials.n)
-
-    # For plasticity
-    @. materials.cosϕ  = cosd(materials.ϕ)
-    @. materials.sinϕ  = sind(materials.ϕ)
-    @. materials.sinψ  = sind(materials.ψ)
+    nphases = 2
+    materials = initialize_materials(nphases; plasticity=DruckerPrager,compressible=true)
+    
+    materials.g    .= [0.0,    0.0 ]
+        materials.ρ    .= [0.0,    0.0 ]
+        materials.n    .= [1.0,    1.0  ]
+        materials.η0   .= [2e50,   2e50 ]./sc.t./sc.σ 
+        materials.ξ0   .= [1e60,   1e60   ]./sc.σ/sc.t
+        materials.G    .= [1.0,    0.25  ]./sc.σ
+        materials.plasticity.C    .= [1.74e-4,    1.74e-4 ]./sc.σ
+        materials.plasticity.ϕ    .= [30.,    30.  ]
+        materials.plasticity.ηvp  .= [2e3,    2e3  ]./sc.t./sc.σ
+        materials.β    .= [0.5,   0.5 ]./sc.σ
+        materials.plasticity.ψ    .= [10.0,    10.0  ]
+        preprocess!(materials)
 
     # Time steps and bulk strain intervals
     Δt0    = 1e5/sc.t
-    nt     = 1 #40
+    nt     = 40
     if flag.strain_int
         ε_bulk = LinRange(1e-4,3e-4,5)
         d = 1
     end
 
     # Newton solver
-    niter = 1 #2
+    niter = 2
     ϵ_nl  = 1e-10
     α     = LinRange(0.05, 1.0, 10)
 
@@ -219,6 +208,9 @@ end
     η       = (c  =  ones(size_c...), v  =  ones(size_v...) )
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
     ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
+    G       = (c  =  ones(size_c...), v  =  ones(size_v...) )
+    ρ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
+    β       = (c  =  ones(size_c...), v  =  ones(size_v...) )
     ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
     τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
     τ       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
@@ -265,6 +257,7 @@ end
     ccord = (x=-L.x/2, y=-L.y/2)
     @views phases.c[inx_c, iny_c][((X.c.x.-ccord.x).^2 .+ ((X.c.y').-ccord.y).^2) .<= (25e-4)] .= 2
     @views phases.v[inx_v, iny_v][((X.v.x.-ccord.x).^2 .+ ((X.v.y').-ccord.y).^2) .<= (25e-4)] .= 2
+    phase_ratios=InitialisePhaseRatios(phases, nphases)
 
     #------------------------------------------------------------------#
 
@@ -294,6 +287,9 @@ end
         τ0.xy .= τ.xy
         Pt0   .= Pt
 
+        # Compute material properties on grid
+        compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, nphases)
+
         for iter=1:niter
 
             @printf("Iteration %04d\n", iter)
@@ -302,55 +298,53 @@ end
             # Residual check        
             @timeit to "Residual" begin
                 @info "Tangent operator allocations"
-                @time TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
-                # @show extrema(λ̇.c[inx_c,iny_c])
-                # @show extrema(λ̇.v[inx_v,iny_v])
-                @time ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ) 
-                @time ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
-                @time ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
+                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
+                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, ξ, materials, number, type, BC, nc, Δ) 
+                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
             end
 
-            # err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
-            # err.y[iter] = @views norm(R.y[inx_Vy,iny_Vy])/sqrt(nVy)
-            # err.p[iter] = @views norm(R.p[inx_c,iny_c])/sqrt(nPt)
+            err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
+            err.y[iter] = @views norm(R.y[inx_Vy,iny_Vy])/sqrt(nVy)
+            err.p[iter] = @views norm(R.p[inx_c,iny_c])/sqrt(nPt)
 
-            # @show  max(err.x[iter], err.y[iter], err.p[iter])
+            @show  max(err.x[iter], err.y[iter], err.p[iter])
 
-            # max(err.x[iter], err.y[iter]) < ϵ_nl ? break : nothing
+            max(err.x[iter], err.y[iter]) < ϵ_nl ? break : nothing
 
-            # #--------------------------------------------#
-            # # Set global residual vector
-            # SetRHS!(r, R, number, type, nc)
+            #--------------------------------------------#
+            # Set global residual vector
+            SetRHS!(r, R, number, type, nc)
 
-            # #--------------------------------------------#
-            # # Assembly
-            # @timeit to "Assembly" begin
-            #     AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-            #     AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-            #     AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-            # end
+            #--------------------------------------------#
+            # Assembly
+            @timeit to "Assembly" begin
+                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, ξ, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, ρ, materials, number, pattern, type, BC, nc, Δ)
+            end
 
-            # #--------------------------------------------# 
-            # # Stokes operator as block matrices
-            # 𝐊  .= [M.Vx.Vx M.Vx.Vy; M.Vy.Vx M.Vy.Vy]
-            # 𝐐  .= [M.Vx.Pt; M.Vy.Pt]
-            # 𝐐ᵀ .= [M.Pt.Vx M.Pt.Vy]
-            # 𝐏  .= M.Pt.Pt
+            #--------------------------------------------# 
+            # Stokes operator as block matrices
+            𝐊  .= [M.Vx.Vx M.Vx.Vy; M.Vy.Vx M.Vy.Vy]
+            𝐐  .= [M.Vx.Pt; M.Vy.Pt]
+            𝐐ᵀ .= [M.Pt.Vx M.Pt.Vy]
+            𝐏  .= M.Pt.Pt
             
-            # #--------------------------------------------#
+            #--------------------------------------------#
      
-            # # Direct-iterative solver
-            # fu   = @views -r[1:size(𝐊,1)]
-            # fp   = @views -r[size(𝐊,1)+1:end]
-            # u, p = DecoupledSolver(𝐊, 𝐐, 𝐐ᵀ, 𝐏, fu, fp; fact=:lu,  ηb=1e3, niter_l=10, ϵ_l=1e-11)
-            # @views dx[1:size(𝐊,1)]     .= u
-            # @views dx[size(𝐊,1)+1:end] .= p
+            # Direct-iterative solver
+            fu   = @views -r[1:size(𝐊,1)]
+            fp   = @views -r[size(𝐊,1)+1:end]
+            u, p = DecoupledSolver(𝐊, 𝐐, 𝐐ᵀ, 𝐏, fu, fp; fact=:lu,  ηb=1e3, niter_l=10, ϵ_l=1e-11)
+            @views dx[1:size(𝐊,1)]     .= u
+            @views dx[size(𝐊,1)+1:end] .= p
 
-            # #--------------------------------------------#
-            # # Line search & solution update
-            # @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
-
-            # UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
+            #--------------------------------------------#
+            # Line search & solution update
+            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, ξ, ρ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_ratios, nc, Δ)
+            UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
+            TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
         end
 
         # Update pressure
@@ -366,28 +360,43 @@ end
             @show size(m.εII)
         end
         
-        #--------------------------------------------#
+        # --------------------------------------------#
         # Plot fields
-        # if flag.fields
-        #     z1 = heatmap(X.v.x, X.c.y, (V.x[inx_Vx,iny_Vx]').*1e7./sc.t, aspect_ratio=1, xlim=extrema(X.c.x), title="Vx [10⁻⁶]")
-        #     z2 = heatmap(X.c.x, X.c.y,  (Pt[inx_c,iny_c]').*sc.σ, aspect_ratio=1, xlim=extrema(X.c.x), title="Pt")
-        #     # z3 = heatmap(X.c.x, X.c.y,  log10.((ε̇II)'./sc.t), aspect_ratio=1, xlim=extrema(X.c.x), title="ε̇II", c=:coolwarm)
-        #     z3 = heatmap(X.c.x, X.c.y,  log10.(εII)', aspect_ratio=1, xlim=extrema(X.c.x), title="εII", c=:coolwarm)
-        #     z4 = heatmap(X.c.x, X.c.y,  ((τII').*sc.σ)*1e4, aspect_ratio=1, xlim=extrema(X.c.x), title="τII e-4", c=:turbo)
-        #     if flag.Matlab && m !== nothing
-        #         # z3m = heatmap(m.X.c.x, m.X.c.y, log10.((m.ε̇II)'./sc.t, aspect_ratio=1, xlim=extrema(m.X.c.x), title="ε̇II from M2Di", c=:coolwarm)
-        #         z3m = heatmap(m.X.c.x, m.X.c.y, log10.(m.εII)', aspect_ratio=1, xlim=extrema(m.X.c.x), title="εII from M2Di", c=:coolwarm)
-        #         display(plot(z3, z3m, layout=(1,2)))
-        #     else
-        #         display(plot(z1, z2, z3, z4, layout=(2,2)))
-        #     end
+        if flag.fields
+            fig = Figure(size=(900,700), fontsize=14)
+            ax1 = Axis(fig[1,1], title="Vx [10⁻⁶]", aspect=DataAspect())
+            heatmap!(ax1, X.v.x, X.c.y, (V.x[inx_Vx,iny_Vx]').*1e7./sc.t)
+            xlims!(ax1, extrema(X.c.x))
 
-        #     #z0 = plot(xlabel="Iterations @ step $(it) ", ylabel="log₁₀ error", legend=:topright)
-        #     #z0 = scatter!(1:niter, log10.(err.x[1:niter]), label="Vx")
-        #     #z0 = scatter!(1:niter, log10.(err.y[1:niter]), label="Vy")
-        #     #z0 = scatter!(1:niter, log10.(err.p[1:niter]), label="Pt")
-        #     # dislpay(z0)
-        # end
+            ax2 = Axis(fig[1,2], title="Pt", aspect=DataAspect())
+            heatmap!(ax2, X.c.x, X.c.y, (Pt[inx_c,iny_c]').*sc.σ)
+            xlims!(ax2, extrema(X.c.x))
+
+            # z3 = heatmap(X.c.x, X.c.y,  log10.((ε̇II)'./sc.t), aspect_ratio=1, xlim=extrema(X.c.x), title="ε̇II", c=:coolwarm)
+            ax3 = Axis(fig[2,1], title="εII", aspect=DataAspect())
+            hm3 = heatmap!(ax3, X.c.x, X.c.y, log10.(εII)'; colormap=:coolwarm)
+            xlims!(ax3, extrema(X.c.x))
+
+            ax4 = Axis(fig[2,2], title="τII e-4", aspect=DataAspect())
+            heatmap!(ax4, X.c.x, X.c.y, ((τII').*sc.σ)*1e4; colormap=:turbo)
+            xlims!(ax4, extrema(X.c.x))
+
+            if flag.Matlab && m !== nothing
+                # z3m = heatmap(m.X.c.x, m.X.c.y, log10.((m.ε̇II)'./sc.t, aspect_ratio=1, xlim=extrema(m.X.c.x), title="ε̇II from M2Di", c=:coolwarm)
+                ax_cmp = Axis(fig[3,1:2], title="εII from M2Di", aspect=DataAspect())
+                heatmap!(ax_cmp, m.X.c.x, m.X.c.y, log10.(m.εII)'; colormap=:coolwarm)
+                xlims!(ax_cmp, extrema(m.X.c.x))
+                display(fig)
+            else
+                display(fig)
+            end
+
+            #z0 = plot(xlabel="Iterations @ step $(it) ", ylabel="log₁₀ error", legend=:topright)
+            #z0 = scatter!(1:niter, log10.(err.x[1:niter]), label="Vx")
+            #z0 = scatter!(1:niter, log10.(err.y[1:niter]), label="Vy")
+            #z0 = scatter!(1:niter, log10.(err.p[1:niter]), label="Pt")
+            # dislpay(z0)
+        end
         @show (3/materials.β[1] - 2*materials.G[1])/(2*(3/materials.β[1] + 2*materials.G[1]))
 
         #--------------------------------------------#
@@ -445,7 +454,7 @@ let
     for i in eachindex(resolution)
 
         res = resolution[i]
-        flag = (strain_evo=false, Matlab=false, fields=true, strain_int=true )
+        flag = (strain_evo=false, Matlab=false, fields=true, strain_int=false )
 
         (ε_prof, C, m_ε_prof, m_C) = main((x = res, y = res), flag, res)
         # plot!(z5,C[2,:],(ε_prof)*1e3, label="$(res)²")
