@@ -308,10 +308,8 @@ function Continuity(Vx, Vy, Pt, Pt0, D, phase, materials, type_loc, bcv_loc, Δ)
     invΔt = 1 / Δ.t
     β     = materials.β[phase]
     ξ     = materials.ξ0[phase]
-    η     = materials.β[phase]
     comp  = materials.compressible
     f     = ((Vx[2,2] - Vx[1,2]) * invΔx + (Vy[2,2] - Vy[2,1]) * invΔy) + comp * β * (Pt[1] - Pt0) * invΔt + comp * Pt[1]/ξ 
-    # f    *= max(invΔx, invΔy)
     return f
 end
 
