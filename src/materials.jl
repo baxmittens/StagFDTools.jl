@@ -1,12 +1,12 @@
 abstract type AbstractPlasticity end
 
-Base.@kwdef struct VonMises <: AbstractPlasticity
-    C::Vector{Float64} = Float64[]
-    cosϕ::Vector{Float64} = Float64[]
-    ηvp::Vector{Float64} = Float64[]
-    sinϕ::Vector{Float64} = Float64[]
-    sinψ::Vector{Float64} = Float64[]
-    cosψ::Vector{Float64} = Float64[]
+Base.@kwdef struct VonMises{T} <: AbstractPlasticity
+    C::T = Float64[]
+    cosϕ::T = Float64[]
+    ηvp::T = Float64[]
+    sinϕ::T = Float64[]
+    sinψ::T = Float64[]
+    cosψ::T = Float64[]
 end
 Base.@kwdef struct DruckerPrager <: AbstractPlasticity
     C::Vector{Float64} = Float64[]
