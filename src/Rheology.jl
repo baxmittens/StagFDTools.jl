@@ -157,7 +157,7 @@ function NonLinearReturnMapping(τII, P, ε̇_eff, Dkk, P0, ηve, β, Δt, plast
         # x .= x0 .+  α*δx
 
         for ils in eachindex(αvec)
-            x .= x0 .+ αvec[ils]δx
+            x = @. x0 + αvec[ils] * δx
             R = RheologyResidual(x, trial, plastic, model)
             Fvec[ils] = norm(ForwardDiff.value.(R))
         end
