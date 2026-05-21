@@ -105,8 +105,8 @@ using TimerOutputs
     # Intialise field
     L   = (x=1.0, y=1.0)
     Δ   = (x=L.x/nc.x, y=L.y/nc.y, t = Δt0)
-    x = (min= -L.x / 2, max= L.x / 2)
-    y = (min= -L.y / 2, max= L.y / 2)
+    x   = (min=-L.x/2, max=L.x/2)
+    y   = (min=-L.y/2,   max=L.x/2  )
 
     # Allocations
     R       = (x  = zeros(size_x...), y  = zeros(size_y...), p  = zeros(size_c...))
@@ -134,7 +134,7 @@ using TimerOutputs
     𝐷_ctl   = (c = D_ctl_c, v = D_ctl_v)
 
     # Mesh coordinates
-    X = GenerateGrid(x, y, Δ, nc)
+    X  = GenerateGrid(x, y, Δ, nc)
     phases  = (c= ones(Int64, size_c...), v= ones(Int64, size_v...))
 
     # Initial velocity & pressure field
@@ -299,7 +299,7 @@ using TimerOutputs
         axislegend(ax1, position=:rt)
 
         ax2 = Axis(fig[1,2], title="Vx", aspect=DataAspect())
-        heatmap!(ax2, X.v.x, X.v.y, V.x[inx_Vx,iny_Vx]')
+        heatmap!(ax2, X.v.x, X.c.y, V.x[inx_Vx,iny_Vx]')
         xlims!(ax2, extrema(X.v.x))
 
         ax3 = Axis(fig[2,1], title="ε̇II", aspect=DataAspect())

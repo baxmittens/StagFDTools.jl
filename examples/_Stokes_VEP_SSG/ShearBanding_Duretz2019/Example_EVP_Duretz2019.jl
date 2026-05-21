@@ -479,12 +479,10 @@ end
     return (ε = ε_prof, ε̇ = ε̇_prof, P = P_prof), C, εII, Grid.c.x, Grid.c.y
 end
 
-#---------------------------------------------------------------------------------------
 #                                       M A I N    
-#---------------------------------------------------------------------------------------
 
 let
-    resolution = [51]
+    resolution = [51, 101, 201, 401]
     n = length(resolution)
 
     εprofiles = Vector{Vector{Float64}}(undef, n)
@@ -542,33 +540,22 @@ let
         εprof =  εprofiles[i]
         s     = vec(sqrt.(sum((C .- C[:, 1]).^2, dims = 1)))
         s = s .- s[end] / 2
-        if n<3
-            lines!(axε, s, εprof .* 1e3, label = "$(resolution[i])²")
-        else
-            scatter!(axε, s, εprof .* 1e3, markersize=3.5, label = "$(resolution[i])²")
-        end
+        lines!(axε, s, εprof .* 1e3, label = "$(resolution[i])²")
+
     end
     for i in 1:n
         C     = cuts[i]
         ε̇prof = ε̇profiles[i]
         s     = vec(sqrt.(sum((C .- C[:, 1]).^2, dims = 1)))
         s = s .- s[end] / 2 
-        if n<3
-            lines!(axε̇, s, ε̇prof .* 1e9, label = "$(resolution[i])²")
-        else
-            scatter!(axε̇, s, ε̇prof .* 1e9, markersize=3.5, label = "$(resolution[i])²")
-        end
+        lines!(axε̇, s, ε̇prof .* 1e9, label = "$(resolution[i])²")
     end
     for i in 1:n
         C     = cuts[i]
         Pprof = Pprofiles[i]
         s     = vec(sqrt.(sum((C .- C[:, 1]).^2, dims = 1)))
         s = s .- s[end] / 2 
-        if n<3
-            lines!(axP, s, Pprof .* 1e4, label = "$(resolution[i])²")
-        else
-            scatter!(axP, s, Pprof .* 1e4, markersize=3.5,label = "$(resolution[i])²")
-        end
+        lines!(axP, s, Pprof .* 1e4, label = "$(resolution[i])²")
     end
 
     axislegend(axP)
