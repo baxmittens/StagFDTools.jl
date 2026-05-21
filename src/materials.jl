@@ -116,13 +116,13 @@ end
 
 struct NoPlasticity <: AbstractPlasticity end
 
-initialize(::Type{VonMises}, n::Integer) = VonMises(
-    C=1e50 * ones(n),
+VonMises(n::Integer) = VonMises(
+    C=fill(1e50, n),
     cosϕ=ones(n),
-    ηvp=0. * ones(n),
-    sinϕ=0. * ones(n),
-    sinψ=0. * ones(n),
-    cosψ=0. * ones(n)
+    ηvp=zeros((n),
+    sinϕ=zeros((n),
+    sinψ=zeros((n),
+    cosψ=zeros((n)
 )
 
 initialize(::Type{DruckerPrager}, n::Integer) = DruckerPrager(
