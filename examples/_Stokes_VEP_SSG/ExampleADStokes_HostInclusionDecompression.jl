@@ -130,14 +130,9 @@ end
     𝐷_ctl = (c=D_ctl_c, v=D_ctl_v)
 
     # Mesh coordinates
-    # xmin, xmax = -L.x/2, L.x/2
-    # ymin, ymax = -L.y/2, L.y/2
-    xmin, xmax = -0.0, L.x
-    ymin, ymax = -0.0, L.y
-    xv = LinRange(xmin, xmax, nc.x + 1)
-    yv = LinRange(ymin, ymax, nc.y + 1)
-    xc = LinRange(xmin + Δ.x / 2, xmax - Δ.x / 2, nc.x)
-    yc = LinRange(ymin + Δ.y / 2, ymax - Δ.y / 2, nc.y)
+    x = (min=-0.0, max=L.x)
+    y = (min=-0.0, max=L.y)
+    X = GenerateGrid(x, y, Δ, nc)
     phases = (c=ones(Int64, size_c...), v=ones(Int64, size_v...))  # phase on velocity points
 
     # Initial velocity & pressure field
@@ -151,20 +146,20 @@ end
     @views begin
         BC.Vx[2, iny_Vx] .= (type.Vx[1, iny_Vx] .== :Neumann_normal) .* D_BC[1, 1]
         BC.Vx[end-1, iny_Vx] .= (type.Vx[end, iny_Vx] .== :Neumann_normal) .* D_BC[1, 1]
-        BC.Vx[inx_Vx, 2] .= (type.Vx[inx_Vx, 2] .== :Neumann_tangent) .* D_BC[1, 2] .+ (type.Vx[inx_Vx, 2] .== :Dirichlet_tangent) .* (D_BC[1, 1] * xv .+ D_BC[1, 2] * yv[1])
-        BC.Vx[inx_Vx, end-1] .= (type.Vx[inx_Vx, end-1] .== :Neumann_tangent) .* D_BC[1, 2] .+ (type.Vx[inx_Vx, end-1] .== :Dirichlet_tangent) .* (D_BC[1, 1] * xv .+ D_BC[1, 2] * yv[end])
+        BC.Vx[inx_Vx, 2] .= (type.Vx[inx_Vx, 2] .== :Neumann_tangent) .* D_BC[1, 2] .+ (type.Vx[inx_Vx, 2] .== :Dirichlet_tangent) .* (D_BC[1, 1] * X.v.x .+ D_BC[1, 2] * X.v.y[1])
+        BC.Vx[inx_Vx, end-1] .= (type.Vx[inx_Vx, end-1] .== :Neumann_tangent) .* D_BC[1, 2] .+ (type.Vx[inx_Vx, end-1] .== :Dirichlet_tangent) .* (D_BC[1, 1] * X.v.x .+ D_BC[1, 2] * X.v.y[end])
         BC.Vy[inx_Vy, 2] .= (type.Vy[inx_Vy, 1] .== :Neumann_normal) .* D_BC[2, 2]
         BC.Vy[inx_Vy, end-1] .= (type.Vy[inx_Vy, end] .== :Neumann_normal) .* D_BC[2, 2]
-        BC.Vy[2, iny_Vy] .= (type.Vy[2, iny_Vy] .== :Neumann_tangent) .* D_BC[2, 1] .+ (type.Vy[2, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2, 1] * xv[1] .+ D_BC[2, 2] * yv)
-        BC.Vy[end-1, iny_Vy] .= (type.Vy[end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2, 1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2, 1] * xv[end] .+ D_BC[2, 2] * yv)
+        BC.Vy[2, iny_Vy] .= (type.Vy[2, iny_Vy] .== :Neumann_tangent) .* D_BC[2, 1] .+ (type.Vy[2, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2, 1] * X.v.x[1] .+ D_BC[2, 2] * X.v.y)
+        BC.Vy[end-1, iny_Vy] .= (type.Vy[end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2, 1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2, 1] * X.v.x[end] .+ D_BC[2, 2] * X.v.y)
     end
 
     # Set material geometry 
     a, b = -1., 1.0
-    xc2 = xc .+ 0 * yc'
-    yc2 = 0 * xc .+ yc'
-    xv2 = xv .+ 0 * yv'
-    yv2 = 0 * xv .+ yv'
+    xc2 = X.c.x .+ 0 * X.c.y'
+    yc2 = 0 * X.c.x .+ X.c.y'
+    xv2 = X.v.x .+ 0 * X.v.y'
+    yv2 = 0 * X.v.x .+ X.v.y'
     @views @. phases.c[inx_c, iny_c][yc2<0.75&&xc2<0.75&&yc2<(xc2*a+b)] .= 3
     @views @. phases.v[inx_v, iny_v][yv2<0.75&&xv2<0.75&&yv2<(xv2*a+b)] .= 3
     @views @. phases.c[inx_c, iny_c][yc2<radius&&xc2<radius] .= 2
@@ -175,9 +170,9 @@ end
 
     fig_init = Figure()
     ax_p1 = Axis(fig_init[1, 1], title="phases.c", aspect=DataAspect())
-    heatmap!(ax_p1, xc, yc, phases.c[inx_c, iny_c]')
+    heatmap!(ax_p1, X.c.x, X.c.y, phases.c[inx_c, iny_c]')
     ax_p2 = Axis(fig_init[1, 2], title="phases.v", aspect=DataAspect())
-    heatmap!(ax_p2, xv, yv, phases.v[inx_v, iny_v]')
+    heatmap!(ax_p2, X.v.x, X.v.y, phases.v[inx_v, iny_v]')
     display(fig_init)
 
     #--------------------------------------------#
@@ -264,7 +259,6 @@ end
         Pt .+= ΔPt.c
 
         #--------------------------------------------#
-
         τxyc = av2D(τ.xy)
         τII = sqrt.(0.5 .* (τ.xx[inx_c, iny_c] .^ 2 + τ.yy[inx_c, iny_c] .^ 2 + (-τ.xx[inx_c, iny_c] - τ.yy[inx_c, iny_c]) .^ 2) .+ τxyc[inx_c, iny_c] .^ 2)
         ε̇xyc = av2D(ε̇.xy)
@@ -285,8 +279,8 @@ end
         axislegend(ax1, position=:rt)
 
         ax2 = Axis(fig[1, 2], title="log10 ε̇II [1/s]", aspect=DataAspect())
-        heatmap!(ax2, xc * sc.L * 1e2, yc * sc.L * 1e2, log10.(ε̇II ./ sc.t)', colormap=:coolwarm)
-        xlims!(ax2, extrema(xc * sc.L * 1e2))
+        heatmap!(ax2, X.c.x * sc.L * 1e2, X.c.y * sc.L * 1e2, log10.(ε̇II ./ sc.t)', colormap=:coolwarm)
+        xlims!(ax2, extrema(X.c.x * sc.L * 1e2))
 
         ax3 = Axis(fig[2, 1], xlabel="P [GPa]", ylabel="τII [GPa]")
         function F_hyperbolic(τ, P, φ, C, σT)
@@ -301,8 +295,8 @@ end
         scatter!(ax3, Pt[inx_c, iny_c][:] .* sc.σ / 1e9, τII[:] .* sc.σ / 1e9, markersize=3)
 
         ax4 = Axis(fig[2, 2], title="τII [MPa]", aspect=DataAspect())
-        heatmap!(ax4, xc * sc.L * 1e2, yc * sc.L * 1e2, τII' .* sc.σ ./ 1e6, colormap=:turbo)
-        xlims!(ax4, extrema(xc * sc.L * 1e2))
+        heatmap!(ax4, X.c.x * sc.L * 1e2, X.c.y * sc.L * 1e2, τII' .* sc.σ ./ 1e6, colormap=:turbo)
+        xlims!(ax4, extrema(X.c.x * sc.L * 1e2))
 
         display(fig)
 

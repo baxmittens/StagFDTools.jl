@@ -145,25 +145,21 @@ using GridGeometryUtils
 
     # --------------------------------------------#
     # Initialise marker field
-    m = InitialiseParticleField(nc, nmpc, L, Δ, materials, noise)
-    phase_ratios, phase_weights = InitialisePhaseRatios(m, ε̇)
-    mphase = ones(Int64, m.num...)
+    m = InitialiseMarkerField(nc, nmpc, L, Δ, x, y, noise)
+    phase_ratios, phase_weights = InitialisePhaseRatios(nphases, ε̇)
 
     # Set material geometry
-    # rad = 0.1 + 1e-13
-    # mphase[(m.xm.^2 .+ (m.ym)'.^2) .<= rad^2] .= 2
     incl = Hexagon((0.0, 0.0), 0.2; θ=π / 10)
-    for I in CartesianIndices(mphase)
-        i, j = I[1], I[2]
-        𝐱 = SVector(m.xm[i], m.ym[j])
+    for i in eachindex(m.phase)
+        𝐱 = SVector(m.Xm[i], m.Ym[i])
         isin = inside(𝐱, incl)
         if isin
-            mphase[I] = 2
+            m.phase[i] = 2
         end
     end
 
     # Set phase ratios on grid
-    SetPhaseRatios!(phase_ratios, phase_weights, m, mphase, Grid.c_e.x, Grid.c_e.y, Grid.v_e.x, Grid.v_e.y, Δ)
+    SetPhaseRatios!(phase_ratios, phase_weights, m, Grid.c_e.x, Grid.c_e.y, Grid.v_e.x, Grid.v_e.y, Δ, nphases)
 
     for I in CartesianIndices(phase_ratios.c)
         s = sum(phase_ratios.c[I])
@@ -194,7 +190,7 @@ using GridGeometryUtils
         Pt0 .= Pt
 
         # Compute bulk and shear moduli
-        compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, size_c, size_v, m.nphases)
+        compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, nphases)
 
 
         for iter = 1:niter

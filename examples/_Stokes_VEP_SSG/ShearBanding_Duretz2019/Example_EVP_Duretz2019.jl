@@ -1,8 +1,9 @@
 #---------------------------------------------------------------------------------------
-# Compute deformation field with VEVP rheology and benchmark with M2Di code from Duretz et al., 2018
+# Compute deformation field with VEVP rheology and benchmark with M2Di code from Duretz et al., 2019
 #---------------------------------------------------------------------------------------
 using StagFDTools, StagFDTools.Stokes, StagFDTools.Rheology, ExtendableSparse, StaticArrays, LinearAlgebra, SparseArrays, Printf
 import Statistics:mean
+using DifferentiationInterface
 using TimerOutputs
 using MAT
 using CairoMakie
@@ -20,48 +21,51 @@ function invariants(Δ, τ, ε̇, inx_c, iny_c, εII)
     return τII, ε̇II, εII
 end
 
+function cumulated_strain(ε̇, ε̇kk, εII, inx_c, iny_c, Δ)
+    
+    ε̇xx = ε̇.xx .+ 1/3*ε̇kk
+    ε̇yy = ε̇.yy .+ 1/3*ε̇kk
+    ε̇zz = 0. .+ 1/3*ε̇kk
+    ε̇xy = ε̇.xy
+    ε̇II  = sqrt.( 0.5.*ε̇xx[inx_c,iny_c].^2 + 0.5*ε̇yy[inx_c,iny_c].^2 .+ 0.5*ε̇zz^2 .+ ε̇xy[inx_c,iny_c].^2 )
+    
+    # Strain increment
+    εII .+= ε̇II.*Δ.t
+    
+    return εII
+end
+
 function section(εII, Δ, nc, materials, L)
 
-    # Angle of the section: Roscoe angle
     θ = 45. - (materials.plasticity.ϕ[1] + materials.plasticity.ψ[1])/4
-    # θrad = deg2rad(θ)
-
-    # Section initialisation
     line = Δ.y*nc.y*0.5
-    C = zeros(2,Int64(round(line/Δ.y)))
-    C[1,:] .= L.x*0.5 - L.x*0.5 
-    C[2,:]  = LinRange(-line*0.5, line*0.5,Int64(round(line/Δ.y)))
+    N    = Int64(round(line/Δ.y))
 
-    # Rotation matrix
-    # Rot = [cos(θrad) -sin(θrad); sin(θrad) cos(θrad)]
+    C = zeros(2, N)
+    C[1, :] .= 0.0
+    C[2, :]  = LinRange(-line*0.5, line*0.5, N)
+
     Rot = [cosd(θ) -sind(θ); sind(θ) cosd(θ)]
 
-
-    # Find mean for a smooth line
+    # Sample εII along the rotated line, averaging over a few offsets
     n_elem = 2
-    ε_sum  = zeros(Int64(round(line/Δ.y)))
+    ε_sum  = zeros(N)
     for k = -n_elem:n_elem
-
         D = copy(C)
-        D[1,:] .+= k*Δ.x
+        D[1, :] .+= k*Δ.x
         D′ = Rot * D
-
-        indx′ = Int64.(round.(D′[1,:]./Δ.x .+ nc.x*0.5 .+ 0.5))
-        indy′ = Int64.(round.(D′[2,:]./Δ.y .+ nc.y*0.5 .+ 0.5))
-
-        for m = 1 : Int64(round(line/Δ.y))
-            i = indx′[m]
-            j = indy′[m]
-
-            ε_sum[m] += εII[i,j]
+        indx′ = Int64.(round.(D′[1, :]./Δ.x .+ nc.x*0.5 .+ 0.5))
+        indy′ = Int64.(round.(D′[2, :]./Δ.y .+ nc.y*0.5 .+ 0.5))
+        for m = 1:N
+            ε_sum[m] += εII[indx′[m], indy′[m]]
         end
     end
+    ε_prof = ε_sum ./ (2*n_elem + 1)
 
-    n_val = n_elem*2+1
-    ε_prof = ε_sum./n_val
-    
+    # Rotate C so the displayed line matches the sampling direction
+    C = Rot * C
+
     return ε_prof, C
-
 end
 
 function MatlabCheck(materials, res, nt)
@@ -69,7 +73,7 @@ function MatlabCheck(materials, res, nt)
     # 1) Import Variables
     # path = @__DIR__
     # folder = /r51_vp
-    path= "/Users/filippozarabara/Documents/HARD DISK BACKUP/PHD/Packages/StagFDTools/examples/_Stokes_VEP_SSG/_ShearBanding_Filippo/r51_vp"
+    path= "path"
     @show path
     m_res = res + 1
     tstep = nt
@@ -105,6 +109,10 @@ end
 @views function main(nc, flag, res)
     #--------------------------------------------#
 
+    # Markers
+    nmpc = (x = 4, y = 4)
+    noise = false
+
     # Scaling
     sc = (σ = 1, L = 1, t = 1)
 
@@ -114,34 +122,40 @@ end
     D_BC   = @SMatrix( [ -ε̇bg 0.;
                           0  ε̇bg ]) 
     bulk_rate = D_BC[4]
+    ε̇kk = tr(D_BC) # whatch out
 
-    # Material parameters
+    # Materials initialization
     nphases = 2
     materials = initialize_materials(nphases; plasticity=DruckerPrager,compressible=true)
     
-    materials.g    .= [0.0,    0.0 ]
-        materials.ρ    .= [0.0,    0.0 ]
-        materials.n    .= [1.0,    1.0  ]
-        materials.η0   .= [2e50,   2e50 ]./sc.t./sc.σ 
-        materials.ξ0   .= [1e60,   1e60   ]./sc.σ/sc.t
-        materials.G    .= [1.0,    0.25  ]./sc.σ
-        materials.plasticity.C    .= [1.74e-4,    1.74e-4 ]./sc.σ
-        materials.plasticity.ϕ    .= [30.,    30.  ]
-        materials.plasticity.ηvp  .= [2e3,    2e3  ]./sc.t./sc.σ
-        materials.β    .= [0.5,   0.5 ]./sc.σ
-        materials.plasticity.ψ    .= [10.0,    10.0  ]
-        preprocess!(materials)
+    # Parameters
+    params_bg = (ρ=1.0, n=1.0, η0=2e50, G=1.0, C=1.74e-4, ϕ=30., ηvp=2.5e2, β=0.5, ψ=10.)
+    params_in = (ρ=1.0, n=1.0, η0=2e40, G=0.25, C=1.74e-4, ϕ=30., ηvp=2.5e2, β=0.5, ψ=10.)
+    r_incl = 5e-2
+
+    materials.g .= [0. , 0.]
+    materials.ρ .= [params_bg.ρ , params_in.ρ]
+    materials.n .= [params_bg.n , params_in.n]
+    materials.η0 .= [params_bg.η0 , params_in.η0]
+    materials.G .= [params_bg.G , params_in.G]
+    materials.β .= [params_bg.β , params_in.β]
+    materials.plasticity.C .= [params_bg.C , params_in.C]
+    materials.plasticity.ϕ .= [params_bg.ϕ , params_in.ϕ]
+    materials.plasticity.ηvp .= [params_bg.ηvp , params_in.ηvp]
+    materials.plasticity.ψ .= [params_bg.ψ , params_in.ψ]
+
+    preprocess!(materials)
 
     # Time steps and bulk strain intervals
-    Δt0    = 1e5/sc.t
-    nt     = 40
+    Δt0    = 1e4/sc.t
+    nt     = 60
     if flag.strain_int
         ε_bulk = LinRange(1e-4,3e-4,5)
         d = 1
     end
 
     # Newton solver
-    niter = 2
+    niter = 10
     ϵ_nl  = 1e-10
     α     = LinRange(0.05, 1.0, 10)
 
@@ -199,6 +213,8 @@ end
 
     # Intialise field
     L   = (x=1.0, y=0.7)
+    x   = (min = -L.x/2, max = L.x/2)
+    y   = (min = -L.y/2, max = L.y/2)
     Δ   = (x=L.x/nc.x, y=L.y/nc.y, t = Δt0)
 
     # Allocations
@@ -207,14 +223,13 @@ end
     Vi      = (x  = zeros(size_x...), y  = zeros(size_y...))
     η       = (c  =  ones(size_c...), v  =  ones(size_v...) )
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
-    ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
-    G       = (c  =  ones(size_c...), v  =  ones(size_v...) )
-    ρ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
-    β       = (c  =  ones(size_c...), v  =  ones(size_v...) )
-    ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
+    ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...)  )
     τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
     τ       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
-    εII     = zeros(nc.x, nc.y)
+    ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
+    G       = (c  = zeros(size_c...), v  = zeros(size_v...))
+    β       = (c  = zeros(size_c...), v  = zeros(size_v...))
+    ρ       = (c  = zeros(size_c...), v  = zeros(size_v...))
 
     Pt      = zeros(size_c...)
     Pti     = zeros(size_c...)
@@ -227,16 +242,14 @@ end
     D_ctl_c =  [@MMatrix(zeros(4,4)) for _ in axes(ε̇.xx,1), _ in axes(ε̇.xx,2)]
     D_ctl_v =  [@MMatrix(zeros(4,4)) for _ in axes(ε̇.xy,1), _ in axes(ε̇.xy,2)]
     𝐷_ctl   = (c = D_ctl_c, v = D_ctl_v)
+    phases  = (c= ones(Int64, size_c...), v= ones(Int64, size_v...))
 
     # Mesh coordinates
-    x   = (min=-L.x/2, max=L.x/2)
-    y   = (min=-L.y/2, max=L.y/2)
-    X  = GenerateGrid(x, y, Δ, nc)
-    phases  = (c= ones(Int64, size_c...), v= ones(Int64, size_v...))  # phase on velocity points
+    Grid = GenerateGrid(x,y,Δ,nc)
 
     # Initial velocity & pressure field
-    @views V.x .= D_BC[1,1]*X.vx_e.x .+ D_BC[1,2]*X.vx_e.y' 
-    @views V.y .= D_BC[2,1]*X.vy_e.x .+ D_BC[2,2]*X.vy_e.y'
+    @views V.x[inx_Vx,iny_Vx] .= D_BC[1,1]*Grid.v.x .+ D_BC[1,2]*Grid.c.x' 
+    @views V.y[inx_Vy,iny_Vy] .= D_BC[2,1]*Grid.c.x .+ D_BC[2,2]*Grid.v.y'
     @views Pt[inx_c, iny_c ]  .= 0.                 
     UpdateSolution!(V, Pt, dx, number, type, nc)
 
@@ -245,19 +258,42 @@ end
     @views begin
         BC.Vx[     2, iny_Vx] .= (type.Vx[     1, iny_Vx] .== :Neumann_normal) .* D_BC[1,1]
         BC.Vx[ end-1, iny_Vx] .= (type.Vx[   end, iny_Vx] .== :Neumann_normal) .* D_BC[1,1]
-        BC.Vx[inx_Vx,      2] .= (type.Vx[inx_Vx,      2] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx,     2] .== :Dirichlet_tangent) .* (D_BC[1,1]*X.v.x .+ D_BC[1,2]*X.v.y[1]  )
-        BC.Vx[inx_Vx,  end-1] .= (type.Vx[inx_Vx,  end-1] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx, end-1] .== :Dirichlet_tangent) .* (D_BC[1,1]*X.v.x .+ D_BC[1,2]*X.v.y[end])
+        BC.Vx[inx_Vx,      2] .= (type.Vx[inx_Vx,      2] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx,     2] .== :Dirichlet_tangent) .* (D_BC[1,1]*Grid.v.x .+ D_BC[1,2]*Grid.v.y[1]  )
+        BC.Vx[inx_Vx,  end-1] .= (type.Vx[inx_Vx,  end-1] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx, end-1] .== :Dirichlet_tangent) .* (D_BC[1,1]*Grid.v.y .+ D_BC[1,2]*Grid.v.y[end])
         BC.Vy[inx_Vy,     2 ] .= (type.Vy[inx_Vy,     1 ] .== :Neumann_normal) .* D_BC[2,2]
         BC.Vy[inx_Vy, end-1 ] .= (type.Vy[inx_Vy,   end ] .== :Neumann_normal) .* D_BC[2,2]
-        BC.Vy[     2, iny_Vy] .= (type.Vy[     2, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[    2, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*X.v.x[1]   .+ D_BC[2,2]*X.v.y)
-        BC.Vy[ end-1, iny_Vy] .= (type.Vy[ end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*X.v.x[end] .+ D_BC[2,2]*X.v.y)
+        BC.Vy[     2, iny_Vy] .= (type.Vy[     2, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[    2, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*Grid.v.x[1]   .+ D_BC[2,2]*Grid.v.y)
+        BC.Vy[ end-1, iny_Vy] .= (type.Vy[ end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*Grid.v.x[end] .+ D_BC[2,2]*Grid.v.y)
     end
 
-    # Set material geometry 
+    #------------------------------------------------------------------#
+    # # Markers 
+
+    # # Initialise marker field
+    # m = InitialiseMarkerField(nc, nmpc, L, Δ, x, y, noise)
+    # phase_ratios, phase_weights = InitialisePhaseRatios(nphases, ε̇)
+
+    # # Set material geometry: circle
+    # ccord = (x=-L.x/2, y=-L.y/2)
+    # m.phase[((m.Xm .- ccord.x).^2 .+ (m.Ym .- ccord.y).^2) .<= (r_incl)^2] .= 2
+
+    # # Set phase ratios
+    # SetPhaseRatios!(phase_ratios, phase_weights, m, Grid.c_e.x, Grid.c_e.y, Grid.v_e.x, Grid.v_e.y, Δ, nphases)
+    
+    # # check 
+    # for I in CartesianIndices(phase_ratios.c)
+    #     s = sum(phase_ratios.c[I])
+    #     if !(s ≈ 1.0)
+    #         @warn "Invalid phase_ratios.c at $I: sum = $s, values = $(phase_ratios.c[I])"
+    #     end
+    # end
+
+    # NO Markers
+    # Material geometry
     ccord = (x=-L.x/2, y=-L.y/2)
-    @views phases.c[inx_c, iny_c][((X.c.x.-ccord.x).^2 .+ ((X.c.y').-ccord.y).^2) .<= (25e-4)] .= 2
-    @views phases.v[inx_v, iny_v][((X.v.x.-ccord.x).^2 .+ ((X.v.y').-ccord.y).^2) .<= (25e-4)] .= 2
-    phase_ratios=InitialisePhaseRatios(phases, nphases)
+    @views phases.c[inx_c, iny_c][((Grid.c.x .-ccord.x).^2 .+ ((Grid.c.y').-ccord.y).^2) .<= (r_incl)^2] .= 2
+    @views phases.v[inx_v, iny_v][((Grid.v.x .-ccord.x).^2 .+ ((Grid.v.y').-ccord.y).^2) .<= (r_incl)^2] .= 2
+    phase_ratios = InitialisePhaseRatios(phases, nphases)
 
     #------------------------------------------------------------------#
 
@@ -267,10 +303,8 @@ end
     to   = TimerOutput()
     εII  = zeros(nc.x,nc.y)
     if flag.strain_evo
-       z7 = plot(xlabel = "x", ylabel = "εᵢᵢ [10⁻³]", title = "StagFD",size = (700,300))
-        if flag.Matlab
-            z8 = plot(xlabel = "x", ylabel = "εᵢᵢ [10⁻³]", title = "M2Di code", size = (700,300))
-        end
+        fig7 = Figure(size=(700, 300))
+        ax7 = Axis(fig7[1, 1], xlabel="x", ylabel="εᵢᵢ [10⁻³]", title="StagFD")
     end
     #-----------------------------------------------------------------#
 
@@ -287,7 +321,6 @@ end
         τ0.xy .= τ.xy
         Pt0   .= Pt
 
-        # Compute material properties on grid
         compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, nphases)
 
         for iter=1:niter
@@ -297,7 +330,6 @@ end
             #--------------------------------------------#
             # Residual check        
             @timeit to "Residual" begin
-                @info "Tangent operator allocations"
                 TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
                 ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, ξ, materials, number, type, BC, nc, Δ) 
                 ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
@@ -345,6 +377,7 @@ end
             @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, ξ, ρ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_ratios, nc, Δ)
             UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
             TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
+
         end
 
         # Update pressure
@@ -352,44 +385,44 @@ end
 
         #--------------------------------------------#
 
-        (τII, ε̇II, εII) = invariants(Δ, τ, ε̇, inx_c, iny_c, εII)
-
-        if flag.Matlab
-            m= MatlabCheck(materials, res, it)
-            @show size(εII)
-            @show size(m.εII)
-        end
+        # (τII, ε̇II, εII) = invariants(Δ, τ, ε̇, inx_c, iny_c, εII)
+        εII = cumulated_strain(ε̇, ε̇kk, εII, inx_c, iny_c, Δ)
         
-        # --------------------------------------------#
+        #--------------------------------------------#
         # Plot fields
-        if flag.fields
-            fig = Figure(size=(900,700), fontsize=14)
-            ax1 = Axis(fig[1,1], title="Vx [10⁻⁶]", aspect=DataAspect())
-            heatmap!(ax1, X.v.x, X.c.y, (V.x[inx_Vx,iny_Vx]').*1e7./sc.t)
-            xlims!(ax1, extrema(X.c.x))
+         if flag.fields
+            fig_fields = Figure(size=(1000, 800))
+            ax1 = Axis(fig_fields[1, 1], aspect=DataAspect(), title = "time step $it")
+            ax2 = Axis(fig_fields[1, 3], aspect=DataAspect(), title = "time step $it")
+            ax3 = Axis(fig_fields[2, 1], aspect=DataAspect(), title = "time step $it")
+            ax4 = Axis(fig_fields[2, 3], aspect=DataAspect(), title = "time step $it")
 
-            ax2 = Axis(fig[1,2], title="Pt", aspect=DataAspect())
-            heatmap!(ax2, X.c.x, X.c.y, (Pt[inx_c,iny_c]').*sc.σ)
-            xlims!(ax2, extrema(X.c.x))
+            hm1 = heatmap!(ax1, Grid.v.x, Grid.c.y, (V.x[inx_Vx,iny_Vx]').*1e9./sc.t)
+            hm2 = heatmap!(ax2, Grid.c.x, Grid.c.y, (Pt[inx_c,iny_c]').*1e4.*sc.σ; colormap=:turbo)
+            hm3 = heatmap!(ax3, Grid.c.x, Grid.c.y, log10.(εII)'; colormap=:coolwarm)
+            hm4 = heatmap!(ax4, Grid.c.x, Grid.c.y, ((τII').*1e4.*sc.σ); colormap=:turbo)
+            Colorbar(fig_fields[1, 2], hm1, label="Vx [10⁻⁹ m s⁻¹]")
+            Colorbar(fig_fields[1, 4], hm2, label="P [10⁻⁴ Pa]")
+            Colorbar(fig_fields[2, 2], hm3, label="log10(ε̇)")
+            Colorbar(fig_fields[2, 4], hm4, label="τ [10⁻⁴ Pa]")
 
-            # z3 = heatmap(X.c.x, X.c.y,  log10.((ε̇II)'./sc.t), aspect_ratio=1, xlim=extrema(X.c.x), title="ε̇II", c=:coolwarm)
-            ax3 = Axis(fig[2,1], title="εII", aspect=DataAspect())
-            hm3 = heatmap!(ax3, X.c.x, X.c.y, log10.(εII)'; colormap=:coolwarm)
-            xlims!(ax3, extrema(X.c.x))
 
-            ax4 = Axis(fig[2,2], title="τII e-4", aspect=DataAspect())
-            heatmap!(ax4, X.c.x, X.c.y, ((τII').*sc.σ)*1e4; colormap=:turbo)
-            xlims!(ax4, extrema(X.c.x))
-
-            if flag.Matlab && m !== nothing
-                # z3m = heatmap(m.X.c.x, m.X.c.y, log10.((m.ε̇II)'./sc.t, aspect_ratio=1, xlim=extrema(m.X.c.x), title="ε̇II from M2Di", c=:coolwarm)
-                ax_cmp = Axis(fig[3,1:2], title="εII from M2Di", aspect=DataAspect())
-                heatmap!(ax_cmp, m.X.c.x, m.X.c.y, log10.(m.εII)'; colormap=:coolwarm)
-                xlims!(ax_cmp, extrema(m.X.c.x))
-                display(fig)
-            else
-                display(fig)
-            end
+            xlims!(ax1, extrema(Grid.c.x)...)
+            xlims!(ax2, extrema(Grid.c.x)...)
+            xlims!(ax3, extrema(Grid.c.x)...)
+            xlims!(ax4, extrema(Grid.c.x)...)
+            # if flag.Matlab && m !== nothing
+            #     fig_cmp = Figure(size=(1000, 400))
+            #     ax_cmp1 = Axis(fig_cmp[1, 1], title="εII", aspect=DataAspect())
+            #     ax_cmp2 = Axis(fig_cmp[1, 2], title="εII from M2Di", aspect=DataAspect())
+            #     heatmap!(ax_cmp1, Grid.c.x, Grid.c.y, log10.(εII)'; colormap=:coolwarm)
+            #     heatmap!(ax_cmp2, m.xc, m.yc, log10.(m.εII)'; colormap=:coolwarm)
+            #     xlims!(ax_cmp1, extrema(Grid.c.x)...)
+            #     xlims!(ax_cmp2, extrema(m.xc)...)
+            #     display(fig_cmp)
+            # else
+            #     display(fig_fields)
+            # end
 
             #z0 = plot(xlabel="Iterations @ step $(it) ", ylabel="log₁₀ error", legend=:topright)
             #z0 = scatter!(1:niter, log10.(err.x[1:niter]), label="Vx")
@@ -397,25 +430,27 @@ end
             #z0 = scatter!(1:niter, log10.(err.p[1:niter]), label="Pt")
             # dislpay(z0)
         end
-        @show (3/materials.β[1] - 2*materials.G[1])/(2*(3/materials.β[1] + 2*materials.G[1]))
-
         #--------------------------------------------#
         # PLot time evolution of accumulated strain
         if flag.strain_evo
+            (ε̇_prof, C) = section(ε̇II, Δ, nc,materials,L)
+            (P_prof, C) = section(ε̇II, Δ, nc,materials,L)
             (ε_prof, C) = section(εII, Δ, nc,materials,L)
             if flag.strain_int
                 cur_ε = bulk_rate*Δ.t*it
                 @show(cur_ε )
                 if cur_ε ≈ ε_bulk[d]
-                    plot!(z7,C[2,:],(ε_prof)*1e3, label = "$(@sprintf("%0.1f", cur_ε*1e4)) [10⁻⁴]")
-                    if flag.Matlab
-                        if m !== nothing
-                            plot!(z8,m.C[2,:],(m.ε_prof)*1e3, label = "$(@sprintf("%0.1f", m.incr*it*1e4)) [10⁻⁴]") 
-                            display(plot(z7,z8, layout=(1,2)))
-                        end
-                    else
-                        display(z7)
-                    end 
+                    lines!(ax7, C[2,:], (ε_prof)*1e3, label = "$(@sprintf("%0.1f", cur_ε*1e4)) [10⁻⁴]")
+                    axislegend(ax7)
+                    # if flag.Matlab
+                    #     if m !== nothing
+                    #         lines!(ax8, m.C[2,:], (m.ε_prof)*1e3, label = "$(@sprintf("%0.1f", m.incr*it*1e4)) [10⁻⁴]")
+                    #         axislegend(ax8)
+                    #         display(fig8)
+                    #     end
+                    # else
+                    #     display(fig7)
+                    # end 
                     d += 1
                     if d > 5
                         d = 5
@@ -428,44 +463,118 @@ end
     #--------------------------------------------#
     # Compare resolutions
     (ε_prof, C) = section(εII, Δ, nc, materials,L)
-    if flag.Matlab
-        m_outp = MatlabCheck(materials, res,nt)
-        if m_outp !== nothing
-            (m_ε_prof, m_C) = m_outp
-        end
-    else
-        m_ε_prof = 1
-        m_C = 1
-    end
+    (ε̇_prof, C) = section(ε̇.II, Δ, nc,materials,L)
+    (P_prof, C) = section(Pt, Δ, nc,materials,L)
+    # if flag.Matlab
+    #     m_outp = MatlabCheck(materials, res,nt)
+    #     if m_outp !== nothing
+    #         (m_ε_prof, m_C) = m_outp
+    #     end
+    # else
+    #     m_ε_prof = 1
+    #     m_C = 1
+    # end
     display(to)
 
-    return ε_prof, C, m_ε_prof, m_C
+    return (ε = ε_prof, ε̇ = ε̇_prof, P = P_prof), C, εII, Grid.c.x, Grid.c.y
 end
 
 #---------------------------------------------------------------------------------------
 #                                       M A I N    
 #---------------------------------------------------------------------------------------
 
-let 
-    resolution = [100]
-    NY = 69 
-    # z5 = plot(xlabel="x", ylabel="εᵢᵢ [10⁻³]", size = (700,300), title = "Accumulated strain across shear bands" )
+let
+    resolution = [51]
+    n = length(resolution)
 
-    for i in eachindex(resolution)
+    εprofiles = Vector{Vector{Float64}}(undef, n)
+    ε̇profiles = Vector{Vector{Float64}}(undef, n)
+    Pprofiles = Vector{Vector{Float64}}(undef, n)
+    cuts     = Vector{Matrix{Float64}}(undef, n)
+    grids_x  = Vector{AbstractVector{Float64}}(undef, n)
+    grids_y  = Vector{AbstractVector{Float64}}(undef, n)
+    eps_mats = Vector{Matrix{Float64}}(undef, n)
 
-        res = resolution[i]
-        flag = (strain_evo=false, Matlab=false, fields=true, strain_int=false )
-
-        (ε_prof, C, m_ε_prof, m_C) = main((x = res, y = res), flag, res)
-        # plot!(z5,C[2,:],(ε_prof)*1e3, label="$(res)²")
-        # if flag.Matlab
-        #     plot!(z5,m_C[2,:],(m_ε_prof)*1e3, label="$(res)² from M2Di")
-        # end
-
+    for (i, res) in enumerate(resolution)
+        flag = (strain_evo = false, fields = false, strain_int = false)
+        (prof, C, εII, xc, yc) = main((x = res, y = res), flag, res)
+        εprofiles[i] = prof.ε
+        ε̇profiles[i] = prof.ε̇
+        Pprofiles[i] = prof.P
+        cuts[i]     = C
+        grids_x[i]  = xc
+        grids_y[i]  = yc
+        eps_mats[i] = εII
     end
 
-    # display(z5)
+    # Figure 1
+    ncols = min(2, n)
+    nrows = cld(n, ncols)
+    fig_heat = Figure(size = (500 * ncols + 100, 450 * nrows))
 
+    for idx in 1:n
+        row    = div(idx - 1, ncols) + 1
+        col    = ((idx - 1) % ncols) + 1
+        ax_col = 2col - 1 
+        cb_col = 2col
+
+        ax = Axis(fig_heat[row, ax_col], title  = "$(resolution[idx])²", xlabel = "𝑥", ylabel = "𝑦", aspect = DataAspect())
+
+        xc, yc, εmat = grids_x[idx], grids_y[idx], eps_mats[idx]
+        hm = heatmap!(ax, xc, yc, log10.(εmat); colormap = :lajolla, colorrange = (-3.6, -2.6))
+        Colorbar(fig_heat[row, cb_col], hm)
+
+        C = cuts[idx]
+        lines!(ax, C[1, :], C[2, :], color = :white, linewidth = 2)
+    end
+
+    display(fig_heat)
+
+    # Figure 2
+    fig_prof = Figure(size = (700, 500))
+    axε = Axis(fig_prof[1, 1], xlabel = "𝑥", ylabel = "εII [10⁻³]")
+    axε̇ = Axis(fig_prof[2, 1], xlabel = "𝑥", ylabel = "ε̇II [10⁻⁹]")
+    axP = Axis(fig_prof[3, 1], xlabel = "𝑥", ylabel = "P [10⁻⁴]")
+    
+
+    for i in 1:n
+        C     = cuts[i]
+        εprof =  εprofiles[i]
+        s     = vec(sqrt.(sum((C .- C[:, 1]).^2, dims = 1)))
+        s = s .- s[end] / 2
+        if n<3
+            lines!(axε, s, εprof .* 1e3, label = "$(resolution[i])²")
+        else
+            scatter!(axε, s, εprof .* 1e3, markersize=3.5, label = "$(resolution[i])²")
+        end
+    end
+    for i in 1:n
+        C     = cuts[i]
+        ε̇prof = ε̇profiles[i]
+        s     = vec(sqrt.(sum((C .- C[:, 1]).^2, dims = 1)))
+        s = s .- s[end] / 2 
+        if n<3
+            lines!(axε̇, s, ε̇prof .* 1e9, label = "$(resolution[i])²")
+        else
+            scatter!(axε̇, s, ε̇prof .* 1e9, markersize=3.5, label = "$(resolution[i])²")
+        end
+    end
+    for i in 1:n
+        C     = cuts[i]
+        Pprof = Pprofiles[i]
+        s     = vec(sqrt.(sum((C .- C[:, 1]).^2, dims = 1)))
+        s = s .- s[end] / 2 
+        if n<3
+            lines!(axP, s, Pprof .* 1e4, label = "$(resolution[i])²")
+        else
+            scatter!(axP, s, Pprof .* 1e4, markersize=3.5,label = "$(resolution[i])²")
+        end
+    end
+
+    axislegend(axP)
+    axislegend(axε)
+    axislegend(axε̇)
+    display(fig_prof)
 end
 
 

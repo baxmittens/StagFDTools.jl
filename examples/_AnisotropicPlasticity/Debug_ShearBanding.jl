@@ -168,7 +168,7 @@ using TimerOutputs
     # # Markers 
 
     # # Initialise marker field
-    # m = InitialiseParticleField(nc, nmpc, L, Δ, x, y, noise)
+    # m = InitialiseMarkerField(nc, nmpc, L, Δ, x, y, noise)
     # phase_ratios, phase_weights = InitialisePhaseRatios(nphases, ε̇)
 
     # # Set material geometry: circle

@@ -47,13 +47,6 @@ function KSP_GCR_Stokes!(
         Pinv = nnz(Kpp) == 0 ? fill(ηb, ndofp) : 1.0 ./ diag(Kpp)
 
         Kuusc = Kuu - Kup * spdiagm(Pinv) * Kpu
-        @show extrema(diag(Kup))
-        @show extrema(diag(Kpu))
-        # @show extrema(diag(Kuu))
-        # @show extrema(diag(Kpp))
-        # @show extrema(Pinv)
-        # @show extrema(diag(Kuusc))
-        # @show extrema(Kuusc .- Kuusc')
 
         Kf = cholesky(Hermitian(Kuusc), check=false)
 

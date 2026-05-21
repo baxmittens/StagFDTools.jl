@@ -1,4 +1,4 @@
-function InitialiseParticleField(nc, nmpc, L, Δ, x, y, noise)
+function InitialiseMarkerField(nc, nmpc, L, Δ, x, y, noise)
     num = (x=nmpc.x * (nc.x + 2), y=nmpc.y * (nc.y + 2))
     Δm = (x=L.x / num.x, y=L.y / num.y)
     xm = LinRange(x.min - Δ.x + Δm.x / 2, x.max + Δ.x - Δm.x / 2, num.x)

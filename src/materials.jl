@@ -91,6 +91,7 @@ Base.@kwdef struct Kiss2023 <: AbstractPlasticity
     cosϕ::Vector{Float64} = Float64[]
     sinϕ::Vector{Float64} = Float64[]
     sinψ::Vector{Float64} = Float64[]
+    cosψ::Vector{Float64} = Float64[]
     σT::Vector{Float64} = Float64[]
     δσT::Vector{Float64} = Float64[]
     P1::Vector{Float64} = Float64[]

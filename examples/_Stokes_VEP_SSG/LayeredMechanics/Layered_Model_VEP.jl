@@ -171,7 +171,7 @@ end
 
     # MARKERS ------------------------------------------------------------
     # Initialise markers and derive phase ratios from markers #        |
-    m = InitialiseParticleField(nc, nmpc, L, Δ, x, y, noise) #    |
+    m = InitialiseMarkerField(nc, nmpc, L, Δ, x, y, noise) #    |
     phase_ratios, phase_weights = InitialisePhaseRatios(nphases, ε̇) #        |                                   |
     # |
     # Assign marker phases from layering geometry (1 or 2) #           |
@@ -308,12 +308,15 @@ end
         st = 15
         cm.arrows2d!(ax, Grid.c.x[1:st:end], Grid.c.y[1:st:end], σ1.x[inx_c, iny_c][1:st:end, 1:st:end], σ1.y[inx_c, iny_c][1:st:end, 1:st:end], tiplength=0, lengthscale=0.02, tipwidth=1, color=:white)
         cm.Colorbar(fig[1, 2], hm, label="τII")
+
         ax2 = cm.Axis(fig[1, 3], aspect=cm.DataAspect())
         hm2 = cm.heatmap!(ax2, Grid.c.x, Grid.c.y, η.c[inx_c, iny_c], colormap=:bluesreds)
         cm.Colorbar(fig[1, 4], hm2, label="η")
+
         ax3 = cm.Axis(fig[2, 1], aspect=cm.DataAspect())
         hm3 = cm.heatmap!(ax3, Grid.c.x, Grid.c.y, V.x[inx_Vx, iny_Vx], colormap=:bluesreds)
         cm.Colorbar(fig[2, 2], hm3, label="Vx")
+
         ax4 = cm.Axis(fig[2, 3], aspect=cm.DataAspect())
         hm4 = cm.heatmap!(ax4, Grid.c.x, Grid.c.y, V.y[inx_Vx, iny_Vx], colormap=:bluesreds)
         cm.Colorbar(fig[2, 4], hm4, label="Vy")
@@ -324,6 +327,9 @@ end
         cm.lines!(ax5, 1:it, τIIev[1:it])
         display(fig)
         display(fig)
+
+        ax6 = cm.Axis(fig[1, 4])
+        cm.heatmap!
     end
 
     # display(to)
@@ -345,12 +351,12 @@ let
         @SMatrix([1 0; 0 -1]),
     ]
 
-    nc = (x=50, y=50)
+    nc = (x=200, y=200)
     nt = 40
 
     # Discretise angle of layer 
-    nθ = 30
-    θ = LinRange(0, π, nθ)
+    nθ = 1
+    θ = LinRange(-π / 2 + 5, -π / 2 + 5, nθ)
     τ_cart = zeros(nθ)
     τ_cart_lay = zeros(nθ)
     τ_cart_ana = zeros(nθ)

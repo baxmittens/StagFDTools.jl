@@ -22,7 +22,7 @@ end
     # Material parameters
     nphases = 3
     materials = initialize_materials(nphases; compressible=true)
-    materials.g .= [0.0, 0.0, 0.0]
+    materials.g .= [0.0, 0.0]
     materials.ρ .= [1.0, 1.0, 1.0]
     materials.n .= [1.0, 1.0, 1.0]
     materials.η0 .= [1e0, 1e4, 1e-1]

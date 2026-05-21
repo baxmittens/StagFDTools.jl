@@ -182,7 +182,7 @@ using TimerOutputs, CairoMakie
     phase_ratios = InitialisePhaseRatios(phases, nphases)
 
     # # YES MARKERS:
-    # m = InitialiseParticleField(nc, nmpc, L, Δ, x, y, noise) #    |
+    # m = InitialiseMarkerField(nc, nmpc, L, Δ, x, y, noise) #    |
     # phase_ratios, phase_weights = InitialisePhaseRatios(nphases, ε̇) #        |
 
     # for I in eachindex(m.phase)
