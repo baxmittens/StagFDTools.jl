@@ -1,8 +1,3 @@
-# abstract type AbstractYield end
-# struct DruckerPrager1 <: AbstractYield end
-# struct Hyperbolic <: AbstractYield end
-# struct GolchinMCC <: AbstractYield end
-# export DruckerPrager1, Hyperbolic, GolchinMCC
 using ForwardDiff
 
 
@@ -427,9 +422,7 @@ end
 
 function StressVector!(ε̇::SVector{N,T}, ε̇kk, P0, materials, phase_ratios, Δ) where {N,T}
     η, λ̇, P, τII = LocalRheology(ε̇, ε̇kk, P0, materials, phase_ratios, Δ)
-    τ = SVector{4,T}(@.(2 * η * ε̇)...,P)
+    τ = SVector{4,T}(2 * η * ε̇[1], 2 * η * ε̇[2], 2 * η * ε̇[3], P)
     return τ, η, λ̇, τII
 end
 
-LocalRheology_phase_ratios(args...) = LocalRheology(args...)
-StressVector_phase_ratios!(args...) = StressVector!(args...)
