@@ -132,7 +132,7 @@ function NonLinearReturnMapping(τII, P, ε̇_eff, Dkk, P0, ηve, β, Δt, plast
     itermax = 100
 
     T = typeof(τII)
-    x = MVector{3,T}(τII, P, λ̇)
+    x = SVector{3,T}(τII, P, λ̇)
     αvec = @SVector([0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0])
     Fvec = MVector{length(αvec),T}(zeros(T, length(αvec)))
 
