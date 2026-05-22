@@ -273,8 +273,8 @@ function SMomentum_y_Generic(Vx_loc, Vy_loc, Pt, ΔP, τ0, G_loc, ρ_loc, 𝐷, 
     # Effective visco-elastic strain rate
     Gc = SVector{2}(G_loc.c[1, i] for i = 1:2)
     Gv = SVector{2}(G_loc.v[i, 1] for i = 1:2)
-    _2GΔt_c = SVector{2}(@. inv(2 * Gc * Δ.t))
-    _2GΔt_v = SVector{2}(@. inv(2 * Gv * Δ.t))
+    _2GΔt_c = @. inv(2 * Gc * Δ.t)
+    _2GΔt_v = @. inv(2 * Gv * Δ.t)
     ϵ̇xx_c, ϵ̇yy_c, ϵ̇xy_c = effective_strain_rate(ε̇xx_c, ε̇yy_c, ε̇xy_c, τ0xx_c, τ0yy_c, τ0xy_c, _2GΔt_c)
     ϵ̇xx_v, ϵ̇yy_v, ϵ̇xy_v = effective_strain_rate(ε̇xx_v, ε̇yy_v, ε̇xy_v, τ0xx_v, τ0yy_v, τ0xy_v, _2GΔt_v)
 
