@@ -23,25 +23,26 @@ using TimerOutputs, CairoMakie
     Pbg       = 1e8/sc.σ
 
     # Boundary loading type
-    config = :EW_stress
-    # config = :free_slip
+    # config = :EW_stress
+    config = :free_slip
     D_BC   = @SMatrix( [  ε̇xx  0.;
                           0  -ε̇xx ])
     σ_BC   = @SMatrix( [ -Pbg  0.;
                           0  -Pbg ])
                           
     # Material parameters
-    materials_properties      = initialize_materials( 4, compressible = true, plasticity = :DruckerPrager )
-    materials_properties.n   .= [  1.0,    1.0,     1.0,    1.0]      # Power law exponent
-    materials_properties.η0  .= [ 1e48,   1e28,    1e10,   1e48]./sc.σ./sc.t      # Reference viscosity 
-    materials_properties.G   .= [ 1e10,    5e9,    1e60,   1e10]./sc.σ      # Shear modulus
-    materials_properties.C   .= [  1e8,    1e5,   15e60,  15e60]./sc.σ      # Cohesion
-    materials_properties.ϕ   .= [  40.,    30.,     35.,    35.]      # Friction angle
-    materials_properties.ψ   .= [  0.0,    5.0,     0.0,    0.0]      # Dilation angle
-    materials_properties.ηvp .= [ 1e14,   1e14,    1e14,   1e14].*1e-3./sc.σ./sc.t # 1e-6 Viscoplastic regularisation
-    materials_properties.β   .= [1e-11,  1e-10,   1e-12,  1e-12].*sc.σ      # Compressibility
+    nphases                   = 4
+    materials                 = initialize_materials( nphases, compressible = true, plasticity = DruckerPrager )
+    materials.n              .= [  1.0,    1.0,     1.0,    1.0]             # Power law exponent
+    materials.η0             .= [ 1e48,   1e28,    1e10,   1e48]./sc.σ./sc.t # Reference viscosity 
+    materials.G              .= [ 1e10,    5e9,    1e60,   1e10]./sc.σ       # Shear modulus
+    materials.β              .= [1e-11,  1e-10,   1e-12,  1e-12].*sc.σ       # Compressibility
+    materials.plasticity.C   .= [  1e8,    1e5,   15e60,  15e60]./sc.σ       # Cohesion
+    materials.plasticity.ϕ   .= [  40.,    30.,     35.,    35.]             # Friction angle
+    materials.plasticity.ψ   .= [  0.0,    5.0,     0.0,    0.0]             # Dilation angle
+    materials.plasticity.ηvp .= [ 1e14,   1e14,    1e14,   1e14].*1e-3./sc.σ./sc.t # 1e-6 Viscoplastic regularisation
     #                            rock    gouge     salt   plates
-    materials                 = preprocess_materials( materials_properties )
+    preprocess!(materials)
 
     # Geometry
     L     = (x=width/sc.L, y=height/sc.L)
@@ -138,7 +139,10 @@ using TimerOutputs, CairoMakie
     V       = (x  = zeros(size_x...), y  = zeros(size_y...))
     Vi      = (x  = zeros(size_x...), y  = zeros(size_y...))
     η       = (c  =  ones(size_c...), v  =  ones(size_v...) )
-    ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
+    ξ       = (c=ones(size_c...), v=ones(size_v...))
+    G       = (c=zeros(size_c...), v=zeros(size_v...))
+    β       = (c=zeros(size_c...), v=zeros(size_v...))
+    ρ       = (c=zeros(size_c...), v=zeros(size_v...))    
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
     ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
     τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
@@ -247,6 +251,8 @@ using TimerOutputs, CairoMakie
     #     end
     # end
 
+    phase_ratios = InitialisePhaseRatios(phases, nphases)
+
     Pt  .= Pbg #*rand(size(Pt)...)
     Pt0 .= Pt
     Pti .= Pt
@@ -273,6 +279,8 @@ using TimerOutputs, CairoMakie
         τ0.xy .= τ.xy
         Pt0   .= Pt
 
+        compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, nphases)
+
         @printf("Time step %04d (nthreads = %03d)\n", it, Threads.nthreads())
         iter, ϵ0, ϵ = 0, 0.0, 0.
 
@@ -285,12 +293,12 @@ using TimerOutputs, CairoMakie
             #--------------------------------------------#
             # Residual check        
             @timeit to "Residual" begin
-                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
+                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
                 @show extrema(λ̇.c[inx_c,iny_c])
                 @show extrema(λ̇.v[inx_v,iny_v])
-                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ) 
-                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
-                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
+                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, ξ, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
             end
 
             err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
@@ -307,13 +315,13 @@ using TimerOutputs, CairoMakie
             # Assembly
             @timeit to "Assembly" begin
                 # Jacobian
-                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
+                AssembleContinuity2D!(   M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, ξ, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_x!(   M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(   M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, ρ, materials, number, pattern, type, BC, nc, Δ)
                 # Preconditioner
-                AssembleContinuity2D!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_x!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, pattern, type, BC, nc, Δ)
+                AssembleContinuity2D!(M_PC, V, Pt, Pt0, ΔPt, τ0,     𝐷, β, ξ, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_x!(M_PC, V, Pt, Pt0, ΔPt, τ0,     𝐷, G, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M_PC, V, Pt, Pt0, ΔPt, τ0,     𝐷, G, ρ, materials, number, pattern, type, BC, nc, Δ)
             end
 
             #--------------------------------------------# 
@@ -346,7 +354,7 @@ using TimerOutputs, CairoMakie
 
             #--------------------------------------------#
             # Line search & solution update
-            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
+            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, ξ, ρ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_ratios, nc, Δ)
             UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
         end
 
@@ -403,8 +411,8 @@ using TimerOutputs, CairoMakie
                 if λ̇.c[i,j] > 1e-10
                     true_sum      += 1
                     ph             = phases.c[i,j]
-                    cxcosϕ         = materials.C[ph] * materials.cosϕ[ph]
-                    ηvp            = materials.ηvp[ph]
+                    cxcosϕ         = materials.plasticity.C[ph] * materials.plasticity.cosϕ[ph]
+                    ηvp            = materials.plasticity.ηvp[ph]
                     true_fric[i,j] = tand(asind( 1/Pt[i,j] * (τ.II[i,j] - cxcosϕ - ηvp*λ̇.c[i,j])  ))
                     true_fric_sum += true_fric[i,j]
                 end
@@ -489,12 +497,12 @@ using TimerOutputs, CairoMakie
             # ylims!(ax, -15, 1)
             ax  = Axis(fig[2,2], title=L"$$Stress space", xlabel=L"$P$", ylabel=L"$\tau_{II}$", xlabelsize=ftsz, ylabelsize=ftsz, titlesize=ftsz)
             P_ax       = LinRange(minimum(P_rock), maximum(P_rock), 100)
-            τ_ax_rock  = materials.C[1]*materials.cosϕ[1] .+ P_ax.*materials.sinϕ[1]
-            τ_ax_gouge = materials.C[2]*materials.cosϕ[2] .+ P_ax.*materials.sinϕ[2]
+            τ_ax_rock  = materials.plasticity.C[1] * materials.plasticity.cosϕ[1] .+ P_ax.*materials.plasticity.sinϕ[1]
+            τ_ax_gouge = materials.plasticity.C[2] * materials.plasticity.cosϕ[2] .+ P_ax.*materials.plasticity.sinϕ[2]
             lines!(ax, P_ax*sc.σ/1e6, τ_ax_gouge*sc.σ/1e6, color=:black)
             lines!(ax, P_ax*sc.σ/1e6, τ_ax_rock*sc.σ/1e6, color=:black)
-            scatter!(ax, P_rock*sc.σ/1e6, (τII_rock .- λ̇_rock.*materials.ηvp[2])*sc.σ/1e6, color=:blue )
-            scatter!(ax, P_gouge*sc.σ/1e6, (τII_gouge .- λ̇_gouge.*materials.ηvp[2])*sc.σ/1e6, color=:red )
+            scatter!(ax,  P_rock*sc.σ/1e6, ( τII_rock .- λ̇_rock.* materials.plasticity.ηvp[2])*sc.σ/1e6, color=:blue )
+            scatter!(ax, P_gouge*sc.σ/1e6, (τII_gouge .- λ̇_gouge.*materials.plasticity.ηvp[2])*sc.σ/1e6, color= :red )
 
             # τ_ax_gouge = materials.C[2]*materials.cosϕ[2] .+ P_ax.*materials.sinϕ[2]
             # lines!(ax, P_ax*sc.σ/1e6, τ_ax_gouge*sc.σ/1e6, color=:red)
@@ -516,7 +524,7 @@ using TimerOutputs, CairoMakie
             # scatter!(ax, probes.t[1:it]*sc.t/3600, probes.τIIN[1:it]*sc.σ./1e6, marker=:diamond, markersize=20 )
 
             ax  = Axis(fig[0,2], xlabel="time [hrs]", ylabel="-τxy/σyy", xlabelsize=ftsz, ylabelsize=ftsz, titlesize=ftsz)
-            lines!(ax, probes.t[1:it]*sc.t/3600, ones(it)*tand(materials.ϕ[2]), linestyle=:dash, color=:gray )
+            lines!(ax, probes.t[1:it]*sc.t/3600, ones(it)*tand(materials.plasticity.ϕ[2]), linestyle=:dash, color=:gray )
             scatter!(ax, probes.t[1:it]*sc.t/3600, probes.fric[1:it] )
             scatter!(ax, probes.t[1:it]*sc.t/3600, probes.app_fric[1:it], marker=:star5, markersize=20  )
             display(fig)

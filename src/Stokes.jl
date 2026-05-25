@@ -200,7 +200,7 @@ elseif config == :EW_stress
     end
 end
 
-function SMomentum_x_Generic(Vx_loc, Vy_loc, Pt, ΔP, τ0, 𝐷, phases, materials, type, bcv, Δ)
+function SMomentum_x_Generic(Vx_loc, Vy_loc, Pt, ΔP, τ0, G_loc, 𝐷, materials, type, bcv, Δ)
     
     invΔx, invΔy, BC_sym = 1 / Δ.x, 1 / Δ.y, 1.0
 
@@ -386,27 +386,26 @@ function ResidualMomentum2D_x!(R, V, P, P0, ΔP, τ0, 𝐷, G, materials, number
     shift = (x=1, y=2)
     Threads.@threads for j in 1+shift.y:nc.y+shift.y
         for i in 1+shift.x:nc.x+shift.x+1
-            if type.Vx[i,j] == :in
-                Vx_loc     = SMatrix{3,3}(      V.x[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
-                Vy_loc     = SMatrix{4,4}(      V.y[ii,jj] for ii in i-1:i+2, jj in j-2:j+1)
-                bcx_loc    = SMatrix{3,3}(    BC.Vx[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
-                bcy_loc    = SMatrix{4,4}(    BC.Vy[ii,jj] for ii in i-1:i+2, jj in j-2:j+1)
-                typex_loc  = SMatrix{3,3}(  type.Vx[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
-                typey_loc  = SMatrix{4,4}(  type.Vy[ii,jj] for ii in i-1:i+2, jj in j-2:j+1)
-                typep_loc  = SMatrix{2,1}(  type.Pt[ii,jj] for ii in i-1:i-0, jj in j-1:j-1  )
-                phc_loc    = SMatrix{2,1}( phases.c[ii,jj] for ii in i-1:i,   jj in j-1:j-1)
-                phv_loc    = SMatrix{1,2}( phases.v[ii,jj] for ii in i-0:i-0, jj in j-1:j-0)
-                P_loc      = SMatrix{2,3}(        P[ii,jj] for ii in i-1:i,   jj in j-2:j  )
-                ΔP_loc     = SMatrix{2,1}(       ΔP.c[ii,jj] for ii in i-1:i,   jj in j-1:j-1)
-                τxx0       = SMatrix{2,3}(    τ0.xx[ii,jj] for ii in i-1:i,   jj in j-2:j  )
-                τyy0       = SMatrix{2,3}(    τ0.yy[ii,jj] for ii in i-1:i,   jj in j-2:j  )
-                τxy0       = SMatrix{3,2}(    τ0.xy[ii,jj] for ii in i-1:i+1, jj in j-1:j  )
+            if type.Vx[i, j] == :in
+                Vx_loc = SMatrix{3,3}(V.x[ii, jj] for ii in i-1:i+1, jj in j-1:j+1)
+                Vy_loc = SMatrix{4,4}(V.y[ii, jj] for ii in i-1:i+2, jj in j-2:j+1)
+                bcx_loc = SMatrix{3,3}(BC.Vx[ii, jj] for ii in i-1:i+1, jj in j-1:j+1)
+                bcy_loc = SMatrix{4,4}(BC.Vy[ii, jj] for ii in i-1:i+2, jj in j-2:j+1)
+                typex_loc = SMatrix{3,3}(type.Vx[ii, jj] for ii in i-1:i+1, jj in j-1:j+1)
+                typey_loc = SMatrix{4,4}(type.Vy[ii, jj] for ii in i-1:i+2, jj in j-2:j+1)
+                typep_loc = SMatrix{2,1}(type.Pt[ii, jj] for ii in i-1:i-0, jj in j-1:j-1)
+                P_loc = SMatrix{2,3}(P[ii, jj] for ii in i-1:i, jj in j-2:j)
+                ΔP_loc = SMatrix{2,1}(ΔP.c[ii, jj] for ii in i-1:i, jj in j-1:j-1)
+                τxx0 = SMatrix{2,3}(τ0.xx[ii, jj] for ii in i-1:i, jj in j-2:j)
+                τyy0 = SMatrix{2,3}(τ0.yy[ii, jj] for ii in i-1:i, jj in j-2:j)
+                τxy0 = SMatrix{3,2}(τ0.xy[ii, jj] for ii in i-1:i+1, jj in j-1:j)
+                Gc_loc = SMatrix{2,1}(G.c[ii, jj] for ii in i-1:i, jj in j-1:j-1)
+                Gv_loc = SMatrix{1,2}(G.v[ii, jj] for ii in i-0:i-0, jj in j-1:j-0)
 
                 Dc = SMatrix{2,1}(𝐷.c[ii, jj] for ii in i-1:i, jj in j-1:j-1)
                 Dv = SMatrix{1,2}(𝐷.v[ii, jj] for ii in i-0:i-0, jj in j-1:j-0)
                 bcv_loc = (x=bcx_loc, y=bcy_loc)
                 type_loc = (x=typex_loc, y=typey_loc, p=typep_loc)
-                # ph_loc     = (c=phc_loc, v=phv_loc)
                 D = (c=Dc, v=Dv)
                 τ0_loc = (xx=τxx0, yy=τyy0, xy=τxy0)
                 G_loc = (c=Gc_loc, v=Gv_loc)
@@ -431,8 +430,6 @@ function AssembleMomentum2D_x!(K, V, P, P0, ΔP, τ0, 𝐷, G, materials, num, p
                 typex_loc = SMatrix{3,3}(type.Vx[ii, jj] for ii in i-1:i+1, jj in j-1:j+1)
                 typey_loc = SMatrix{4,4}(type.Vy[ii, jj] for ii in i-1:i+2, jj in j-2:j+1)
                 typep_loc = SMatrix{2,1}(type.Pt[ii, jj] for ii in i-1:i-0, jj in j-1:j-1)
-                # phc_loc    = SMatrix{2,1}( phases.c[ii,jj] for ii in i-1:i,   jj in j-1:j-1)
-                # phv_loc    = SMatrix{1,2}( phases.v[ii,jj] for ii in i-0:i-0, jj in j-1:j-0) 
 
                 Vx_loc = SMatrix{3,3}(V.x[ii, jj] for ii in i-1:i+1, jj in j-1:j+1)
                 Vy_loc = SMatrix{4,4}(V.y[ii, jj] for ii in i-1:i+2, jj in j-2:j+1)
