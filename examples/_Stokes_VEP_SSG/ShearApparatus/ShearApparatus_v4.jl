@@ -261,7 +261,7 @@ using TimerOutputs, CairoMakie
 
     rvec   = zeros(length(α))
     err    = (x = zeros(niter), y = zeros(niter), p = zeros(niter))
-    probes = (τII = zeros(nt), τIIW = zeros(nt), τIIE = zeros(nt), τIIS = zeros(nt), τIIN = zeros(nt), true_fric = zeros(nt), app_fric = zeros(nt), t = zeros(nt), εxx=zeros(nt), εyy=zeros(nt), σyyN=zeros(nt), σyyS=zeros(nt), σxxW=zeros(nt), σxxE=zeros(nt), PW=zeros(nt), PE=zeros(nt), minθ=zeros(nt), maxθ=zeros(nt))
+    probes = (τII = zeros(nt), τIIW = zeros(nt), τIIE = zeros(nt), τIIS = zeros(nt), τIIN = zeros(nt), true_fric = zeros(nt), app_fric = zeros(nt), t = zeros(nt), εxx=zeros(nt), εyy=zeros(nt), σyyN=zeros(nt), σyyS=zeros(nt), σxxW=zeros(nt), σxxE=zeros(nt), PW=zeros(nt), PE=zeros(nt), minθ=zeros(nt), maxθ=zeros(nt), meanθ=zeros(nt))
     to     = TimerOutput()
 
     #--------------------------------------------#
@@ -433,8 +433,9 @@ using TimerOutputs, CairoMakie
         probes.true_fric[it] =  true_fric_sum / true_sum 
 
         # Stress angles
-        probes.minθ[it] = minimum(τ.θ[phases.c.==2])
-        probes.maxθ[it] = maximum(τ.θ[phases.c.==2])
+        probes.minθ[it]  = minimum(τ.θ[phases.c.==2])
+        probes.meanθ[it] =    mean(τ.θ[phases.c.==2])
+        probes.maxθ[it]  = maximum(τ.θ[phases.c.==2])
 
         # Visualise
         function figure()
@@ -520,7 +521,8 @@ using TimerOutputs, CairoMakie
             
             ax  = Axis(fig[1,2], xlabel="time [hrs]", ylabel="σ1 angle gouge", xlabelsize=ftsz, ylabelsize=ftsz, titlesize=ftsz)
             scatter!(ax, probes.t[1:it]*sc.t/3600, probes.minθ[1:it]*180/π )
-            # scatter!(ax, probes.t[1:it]*sc.t/3600, probes.maxθ[1:it]*180/π )
+            scatter!(ax, probes.t[1:it]*sc.t/3600, probes.meanθ[1:it]*180/π )
+            scatter!(ax, probes.t[1:it]*sc.t/3600, probes.maxθ[1:it]*180/π )
             
             display(fig)
 
@@ -531,5 +533,5 @@ using TimerOutputs, CairoMakie
 end
 
 let
-    main((x = 100, y = 200), 60)
+    main((x = 200, y = 300), 60)
 end
