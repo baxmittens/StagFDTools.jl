@@ -118,7 +118,7 @@ end
     # Material parameters
     materials = ( 
         compressible = true,
-        plasticity   = :DruckerPrager1,
+        plasticity   = :DruckerPrager,
         g    = [0.0,    0.0 ],
         ρ    = [0.0,    0.0 ],
         n    = [1.0,    1.0  ],
@@ -145,14 +145,14 @@ end
 
     # Time steps and bulk strain intervals
     Δt0    = 1e5/sc.t
-    nt     = 1 #40
+    nt     = 40
     if flag.strain_int
         ε_bulk = LinRange(1e-4,3e-4,5)
         d = 1
     end
 
     # Newton solver
-    niter = 1 #2
+    niter = 20
     ϵ_nl  = 1e-10
     α     = LinRange(0.05, 1.0, 10)
 
@@ -310,47 +310,47 @@ end
                 @time ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
             end
 
-            # err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
-            # err.y[iter] = @views norm(R.y[inx_Vy,iny_Vy])/sqrt(nVy)
-            # err.p[iter] = @views norm(R.p[inx_c,iny_c])/sqrt(nPt)
+            err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
+            err.y[iter] = @views norm(R.y[inx_Vy,iny_Vy])/sqrt(nVy)
+            err.p[iter] = @views norm(R.p[inx_c,iny_c])/sqrt(nPt)
 
-            # @show  max(err.x[iter], err.y[iter], err.p[iter])
+            @show  max(err.x[iter], err.y[iter], err.p[iter])
 
-            # max(err.x[iter], err.y[iter]) < ϵ_nl ? break : nothing
+            max(err.x[iter], err.y[iter]) < ϵ_nl ? break : nothing
 
-            # #--------------------------------------------#
-            # # Set global residual vector
-            # SetRHS!(r, R, number, type, nc)
+            #--------------------------------------------#
+            # Set global residual vector
+            SetRHS!(r, R, number, type, nc)
 
-            # #--------------------------------------------#
-            # # Assembly
-            # @timeit to "Assembly" begin
-            #     AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-            #     AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-            #     AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
-            # end
+            #--------------------------------------------#
+            # Assembly
+            @timeit to "Assembly" begin
+                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
+            end
 
-            # #--------------------------------------------# 
-            # # Stokes operator as block matrices
-            # 𝐊  .= [M.Vx.Vx M.Vx.Vy; M.Vy.Vx M.Vy.Vy]
-            # 𝐐  .= [M.Vx.Pt; M.Vy.Pt]
-            # 𝐐ᵀ .= [M.Pt.Vx M.Pt.Vy]
-            # 𝐏  .= M.Pt.Pt
+            #--------------------------------------------# 
+            # Stokes operator as block matrices
+            𝐊  .= [M.Vx.Vx M.Vx.Vy; M.Vy.Vx M.Vy.Vy]
+            𝐐  .= [M.Vx.Pt; M.Vy.Pt]
+            𝐐ᵀ .= [M.Pt.Vx M.Pt.Vy]
+            𝐏  .= M.Pt.Pt
             
-            # #--------------------------------------------#
+            #--------------------------------------------#
      
-            # # Direct-iterative solver
-            # fu   = @views -r[1:size(𝐊,1)]
-            # fp   = @views -r[size(𝐊,1)+1:end]
-            # u, p = DecoupledSolver(𝐊, 𝐐, 𝐐ᵀ, 𝐏, fu, fp; fact=:lu,  ηb=1e3, niter_l=10, ϵ_l=1e-11)
-            # @views dx[1:size(𝐊,1)]     .= u
-            # @views dx[size(𝐊,1)+1:end] .= p
+            # Direct-iterative solver
+            fu   = @views -r[1:size(𝐊,1)]
+            fp   = @views -r[size(𝐊,1)+1:end]
+            u, p = DecoupledSolver(𝐊, 𝐐, 𝐐ᵀ, 𝐏, fu, fp; fact=:lu,  ηb=1e3, niter_l=10, ϵ_l=1e-11)
+            @views dx[1:size(𝐊,1)]     .= u
+            @views dx[size(𝐊,1)+1:end] .= p
 
-            # #--------------------------------------------#
-            # # Line search & solution update
-            # @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
+            #--------------------------------------------#
+            # Line search & solution update
+            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
 
-            # UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
+            UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
         end
 
         # Update pressure
@@ -368,26 +368,52 @@ end
         
         #--------------------------------------------#
         # Plot fields
-        # if flag.fields
-        #     z1 = heatmap(X.v.x, X.c.y, (V.x[inx_Vx,iny_Vx]').*1e7./sc.t, aspect_ratio=1, xlim=extrema(X.c.x), title="Vx [10⁻⁶]")
-        #     z2 = heatmap(X.c.x, X.c.y,  (Pt[inx_c,iny_c]').*sc.σ, aspect_ratio=1, xlim=extrema(X.c.x), title="Pt")
-        #     # z3 = heatmap(X.c.x, X.c.y,  log10.((ε̇II)'./sc.t), aspect_ratio=1, xlim=extrema(X.c.x), title="ε̇II", c=:coolwarm)
-        #     z3 = heatmap(X.c.x, X.c.y,  log10.(εII)', aspect_ratio=1, xlim=extrema(X.c.x), title="εII", c=:coolwarm)
-        #     z4 = heatmap(X.c.x, X.c.y,  ((τII').*sc.σ)*1e4, aspect_ratio=1, xlim=extrema(X.c.x), title="τII e-4", c=:turbo)
-        #     if flag.Matlab && m !== nothing
-        #         # z3m = heatmap(m.X.c.x, m.X.c.y, log10.((m.ε̇II)'./sc.t, aspect_ratio=1, xlim=extrema(m.X.c.x), title="ε̇II from M2Di", c=:coolwarm)
-        #         z3m = heatmap(m.X.c.x, m.X.c.y, log10.(m.εII)', aspect_ratio=1, xlim=extrema(m.X.c.x), title="εII from M2Di", c=:coolwarm)
-        #         display(plot(z3, z3m, layout=(1,2)))
-        #     else
-        #         display(plot(z1, z2, z3, z4, layout=(2,2)))
-        #     end
+        if flag.fields
 
-        #     #z0 = plot(xlabel="Iterations @ step $(it) ", ylabel="log₁₀ error", legend=:topright)
-        #     #z0 = scatter!(1:niter, log10.(err.x[1:niter]), label="Vx")
-        #     #z0 = scatter!(1:niter, log10.(err.y[1:niter]), label="Vy")
-        #     #z0 = scatter!(1:niter, log10.(err.p[1:niter]), label="Pt")
-        #     # dislpay(z0)
-        # end
+            fig = Figure()
+
+        axs = [
+            Axis(fig[1,1], title="Vx [10⁻⁶]", aspect=DataAspect()),
+            Axis(fig[1,2], title="Pt",       aspect=DataAspect()),
+            Axis(fig[2,1], title="εII",      aspect=DataAspect()),
+            Axis(fig[2,2], title="τII e-4",  aspect=DataAspect())
+        ]
+
+        heatmap!(axs[1], X.v.x, X.c.y, V.x[inx_Vx,iny_Vx]' .* 1e7 ./ sc.t)
+        heatmap!(axs[2], X.c.x, X.c.y, Pt[inx_c,iny_c]' .* sc.σ)
+        heatmap!(axs[3], X.c.x, X.c.y, log10.(εII)', colormap=:coolwarm)
+        heatmap!(axs[4], X.c.x, X.c.y, τII' .* sc.σ .* 1e4, colormap=:turbo)
+
+        foreach(ax -> xlims!(ax, extrema(X.c.x)), axs)
+
+        if flag.Matlab && m !== nothing
+            fig = Figure()
+            ax1 = Axis(fig[1,1], title="εII", aspect=DataAspect())
+            ax2 = Axis(fig[1,2], title="εII from M2Di", aspect=DataAspect())
+
+            heatmap!(ax1, X.c.x, X.c.y, log10.(εII)', colormap=:coolwarm)
+            heatmap!(ax2, m.X.c.x, m.X.c.y, log10.(m.εII)', colormap=:coolwarm)
+        end
+        display(fig)
+            # z1 = heatmap(X.v.x, X.c.y, (V.x[inx_Vx,iny_Vx]').*1e7./sc.t, aspect_ratio=1, xlim=extrema(X.c.x), title="Vx [10⁻⁶]")
+            # z2 = heatmap(X.c.x, X.c.y,  (Pt[inx_c,iny_c]').*sc.σ, aspect_ratio=1, xlim=extrema(X.c.x), title="Pt")
+            # # z3 = heatmap(X.c.x, X.c.y,  log10.((ε̇II)'./sc.t), aspect_ratio=1, xlim=extrema(X.c.x), title="ε̇II", c=:coolwarm)
+            # z3 = heatmap(X.c.x, X.c.y,  log10.(εII)', aspect_ratio=1, xlim=extrema(X.c.x), title="εII", c=:coolwarm)
+            # z4 = heatmap(X.c.x, X.c.y,  ((τII').*sc.σ)*1e4, aspect_ratio=1, xlim=extrema(X.c.x), title="τII e-4", c=:turbo)
+            # if flag.Matlab && m !== nothing
+            #     # z3m = heatmap(m.X.c.x, m.X.c.y, log10.((m.ε̇II)'./sc.t, aspect_ratio=1, xlim=extrema(m.X.c.x), title="ε̇II from M2Di", c=:coolwarm)
+            #     z3m = heatmap(m.X.c.x, m.X.c.y, log10.(m.εII)', aspect_ratio=1, xlim=extrema(m.X.c.x), title="εII from M2Di", c=:coolwarm)
+            #     display(plot(z3, z3m, layout=(1,2)))
+            # else
+            #     display(plot(z1, z2, z3, z4, layout=(2,2)))
+            # end
+
+            #z0 = plot(xlabel="Iterations @ step $(it) ", ylabel="log₁₀ error", legend=:topright)
+            #z0 = scatter!(1:niter, log10.(err.x[1:niter]), label="Vx")
+            #z0 = scatter!(1:niter, log10.(err.y[1:niter]), label="Vy")
+            #z0 = scatter!(1:niter, log10.(err.p[1:niter]), label="Pt")
+            # dislpay(z0)
+        end
         @show (3/materials.β[1] - 2*materials.G[1])/(2*(3/materials.β[1] + 2*materials.G[1]))
 
         #--------------------------------------------#
