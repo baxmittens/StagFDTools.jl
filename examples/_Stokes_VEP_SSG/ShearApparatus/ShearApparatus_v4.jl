@@ -1,5 +1,5 @@
 using StagFDTools, StagFDTools.Stokes, StagFDTools.Rheology, ExtendableSparse, StaticArrays, LinearAlgebra, SparseArrays, Printf, GridGeometryUtils
-import Statistics:mean
+import Statistics: mean
 using DifferentiationInterface
 using TimerOutputs, CairoMakie
 
@@ -11,7 +11,7 @@ using TimerOutputs, CairoMakie
     #--------------------------------------------#
 
     # Scaling
-    sc  = (σ=1e9, L=1, t=1e6)
+    sc = (σ=1e9, L=1, t=1e6)
 
     # Parameters
     width     = 1.0/sc.L
@@ -44,7 +44,7 @@ using TimerOutputs, CairoMakie
     materials                 = preprocess_materials( materials_properties )
 
     # Geometry
-    L     = (x=width/sc.L, y=height/sc.L)
+    L = (x=width / sc.L, y=height / sc.L)
     gouge = (
         Rectangle((0.0/sc.L, 0.0/sc.L+L.y/2), thickness/sc.L, 2.0/sc.L; θ = θgouge),
     )
@@ -81,9 +81,9 @@ using TimerOutputs, CairoMakie
 
     # Define node types and set BC flags
     type = Fields(
-        fill(:out, (nc.x+3, nc.y+4)),
-        fill(:out, (nc.x+4, nc.y+3)),
-        fill(:out, (nc.x+2, nc.y+2)),
+        fill(:out, (nc.x + 3, nc.y + 4)),
+        fill(:out, (nc.x + 4, nc.y + 3)),
+        fill(:out, (nc.x + 2, nc.y + 2)),
     )
     set_boundaries_template!(type, config, nc)
 
@@ -99,18 +99,18 @@ using TimerOutputs, CairoMakie
     #--------------------------------------------#
     # Stencil extent for each block matrix
     pattern = Fields(
-        Fields(@SMatrix([1 1 1; 1 1 1; 1 1 1]),                 @SMatrix([0 1 1 0; 1 1 1 1; 1 1 1 1; 0 1 1 0]), @SMatrix([1 1 1; 1 1 1])), 
-        Fields(@SMatrix([0 1 1 0; 1 1 1 1; 1 1 1 1; 0 1 1 0]),  @SMatrix([1 1 1; 1 1 1; 1 1 1]),                @SMatrix([1 1; 1 1; 1 1])), 
-        Fields(@SMatrix([0 1 0; 0 1 0]),                        @SMatrix([0 0; 1 1; 0 0]),                      @SMatrix([1]))
+        Fields(@SMatrix([1 1 1; 1 1 1; 1 1 1]), @SMatrix([0 1 1 0; 1 1 1 1; 1 1 1 1; 0 1 1 0]), @SMatrix([1 1 1; 1 1 1])),
+        Fields(@SMatrix([0 1 1 0; 1 1 1 1; 1 1 1 1; 0 1 1 0]), @SMatrix([1 1 1; 1 1 1; 1 1 1]), @SMatrix([1 1; 1 1; 1 1])),
+        Fields(@SMatrix([0 1 0; 0 1 0]), @SMatrix([0 0; 1 1; 0 0]), @SMatrix([1]))
     )
 
     # Sparse matrix assembly
-    nVx   = maximum(number.Vx)
-    nVy   = maximum(number.Vy)
-    nPt   = maximum(number.Pt)
+    nVx = maximum(number.Vx)
+    nVy = maximum(number.Vy)
+    nPt = maximum(number.Pt)
     M = Fields(
-        Fields(ExtendableSparseMatrix(nVx, nVx), ExtendableSparseMatrix(nVx, nVy), ExtendableSparseMatrix(nVx, nPt)), 
-        Fields(ExtendableSparseMatrix(nVy, nVx), ExtendableSparseMatrix(nVy, nVy), ExtendableSparseMatrix(nVy, nPt)), 
+        Fields(ExtendableSparseMatrix(nVx, nVx), ExtendableSparseMatrix(nVx, nVy), ExtendableSparseMatrix(nVx, nPt)),
+        Fields(ExtendableSparseMatrix(nVy, nVx), ExtendableSparseMatrix(nVy, nVy), ExtendableSparseMatrix(nVy, nPt)),
         Fields(ExtendableSparseMatrix(nPt, nVx), ExtendableSparseMatrix(nPt, nVy), ExtendableSparseMatrix(nPt, nPt))
     )
     M_PC = Fields(
@@ -127,34 +127,37 @@ using TimerOutputs, CairoMakie
     𝐏    = ExtendableSparseMatrix(nPt, nPt)
     𝐏_PC = ExtendableSparseMatrix(nPt, nPt)
     dx = zeros(nVx + nVy + nPt)
-    r  = zeros(nVx + nVy + nPt)
+    r = zeros(nVx + nVy + nPt)
 
     #--------------------------------------------#
     # Discretisation
-    Δ   = (x=L.x/nc.x, y=L.y/nc.y, t = Δt0)
+    Δ = (x=L.x / nc.x, y=L.y / nc.y, t=Δt0)
 
     # Allocations
-    R       = (x  = zeros(size_x...), y  = zeros(size_y...), p  = zeros(size_c...))
-    V       = (x  = zeros(size_x...), y  = zeros(size_y...))
-    Vi      = (x  = zeros(size_x...), y  = zeros(size_y...))
-    η       = (c  =  ones(size_c...), v  =  ones(size_v...) )
-    ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
-    λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
-    ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
-    τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
-    τ       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
+    R = (x=zeros(size_x...), y=zeros(size_y...), p=zeros(size_c...))
+    V = (x=zeros(size_x...), y=zeros(size_y...))
+    Vi = (x=zeros(size_x...), y=zeros(size_y...))
+    η = (c=ones(size_c...), v=ones(size_v...))
+    ξ = (c=ones(size_c...), v=ones(size_v...))
+    G = (c=zeros(size_c...), v=zeros(size_v...))
+    β = (c=zeros(size_c...), v=zeros(size_v...))
+    ρ = (c=zeros(size_c...), v=zeros(size_v...))
+    λ̇ = (c=zeros(size_c...), v=zeros(size_v...))
+    ε̇ = (xx=zeros(size_c...), yy=zeros(size_c...), xy=zeros(size_v...), II=zeros(size_c...))
+    τ0 = (xx=zeros(size_c...), yy=zeros(size_c...), xy=zeros(size_v...))
+    τ = (xx=zeros(size_c...), yy=zeros(size_c...), xy=zeros(size_v...), II=zeros(size_c...))
 
-    Pt      = zeros(size_c...)
-    Pti     = zeros(size_c...)
-    Pt0     = zeros(size_c...)
-    ΔPt     = (c=zeros(size_c...), Vx = zeros(size_x...), Vy = zeros(size_y...))
+    Pt = zeros(size_c...)
+    Pti = zeros(size_c...)
+    Pt0 = zeros(size_c...)
+    ΔPt = (c=zeros(size_c...), Vx=zeros(size_x...), Vy=zeros(size_y...))
 
-    Dc      =  [@MMatrix(zeros(4,4)) for _ in axes(ε̇.xx,1), _ in axes(ε̇.xx,2)]
-    Dv      =  [@MMatrix(zeros(4,4)) for _ in axes(ε̇.xy,1), _ in axes(ε̇.xy,2)]
-    𝐷       = (c = Dc, v = Dv)
-    D_ctl_c =  [@MMatrix(zeros(4,4)) for _ in axes(ε̇.xx,1), _ in axes(ε̇.xx,2)]
-    D_ctl_v =  [@MMatrix(zeros(4,4)) for _ in axes(ε̇.xy,1), _ in axes(ε̇.xy,2)]
-    𝐷_ctl   = (c = D_ctl_c, v = D_ctl_v)
+    Dc = [@MMatrix(zeros(4, 4)) for _ in axes(ε̇.xx, 1), _ in axes(ε̇.xx, 2)]
+    Dv = [@MMatrix(zeros(4, 4)) for _ in axes(ε̇.xy, 1), _ in axes(ε̇.xy, 2)]
+    𝐷 = (c=Dc, v=Dv)
+    D_ctl_c = [@MMatrix(zeros(4, 4)) for _ in axes(ε̇.xx, 1), _ in axes(ε̇.xx, 2)]
+    D_ctl_v = [@MMatrix(zeros(4, 4)) for _ in axes(ε̇.xy, 1), _ in axes(ε̇.xy, 2)]
+    𝐷_ctl = (c=D_ctl_c, v=D_ctl_v)
 
     # Mesh coordinates
     x   = (min=-L.x/2, max=L.x/2)
@@ -164,12 +167,12 @@ using TimerOutputs, CairoMakie
     phases  = (c= ones(Int64, size_c...), v= ones(Int64, size_v...))  # phase on velocity points
 
     # Initial velocity & pressure field
-    @views V.x .= D_BC[1,1]*X.vx_e.x .+ D_BC[1,2]*X.vx_e.y' 
-    @views V.y .= D_BC[2,1]*X.vy_e.x .+ D_BC[2,2]*X.vy_e.y'
+    @views V.x .= D_BC[1, 1] * X.vx_e.x .+ D_BC[1, 2] * X.vx_e.y'
+    @views V.y .= D_BC[2, 1] * X.vy_e.x .+ D_BC[2, 2] * X.vy_e.y'
     UpdateSolution!(V, Pt, dx, number, type, nc)
 
     # Boundary condition values
-    BC = ( Vx = zeros(size_x...), Vy = zeros(size_y...))
+    BC = (Vx=zeros(size_x...), Vy=zeros(size_y...))
     @views begin
         BC.Vx[     2, iny_Vx] .= (type.Vx[     1, iny_Vx] .== :Neumann_normal) .* D_BC[1,1]  .+ (type.Vx[     1, iny_Vx] .== :normal_stress) .* σ_BC[1,1]
         BC.Vx[ end-1, iny_Vx] .= (type.Vx[   end, iny_Vx] .== :Neumann_normal) .* D_BC[1,1]  .+ (type.Vx[   end, iny_Vx] .== :normal_stress) .* σ_BC[1,1]
@@ -180,7 +183,7 @@ using TimerOutputs, CairoMakie
         BC.Vy[     2, iny_Vy] .= (type.Vy[     2, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[    2, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*X.v.x[1]   .+ D_BC[2,2]*X.v.y)
         BC.Vy[ end-1, iny_Vy] .= (type.Vy[ end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*X.v.x[end] .+ D_BC[2,2]*X.v.y)
     end
-    
+
     # Set material geometry 
     for i in inx_c, j in iny_c   # loop on centroids
         𝐱 = @SVector([X.c_e.x[i], X.c_e.y[j]])
@@ -208,17 +211,17 @@ using TimerOutputs, CairoMakie
         for igeom in eachindex(gouge) # Gouge: phase 2
             if inside(𝐱, gouge[igeom])
                 phases.v[i, j] = 2
-            end  
+            end
         end
         for igeom in eachindex(salt) # Salt: phase 3
             if inside(𝐱, salt[igeom])
                 phases.v[i, j] = 3
-            end  
+            end
         end
         for igeom in eachindex(plate) # Plate: phase 4
             if inside(𝐱, plate[igeom])
                 phases.v[i, j] = 4
-            end  
+            end
         end
     end
 
@@ -260,18 +263,20 @@ using TimerOutputs, CairoMakie
 
     #--------------------------------------------#
 
-    for it=1:nt
+    for it = 1:nt
 
         @printf("Step %04d\n", it)
         fill!(err.x, 0e0)
         fill!(err.y, 0e0)
         fill!(err.p, 0e0)
-        
+
         # Swap old values 
         τ0.xx .= τ.xx
         τ0.yy .= τ.yy
         τ0.xy .= τ.xy
-        Pt0   .= Pt
+        Pt0 .= Pt
+
+        compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, nphases)
 
         @printf("Time step %04d (nthreads = %03d)\n", it, Threads.nthreads())
         iter, ϵ0, ϵ = 0, 0.0, 0.
@@ -285,12 +290,12 @@ using TimerOutputs, CairoMakie
             #--------------------------------------------#
             # Residual check        
             @timeit to "Residual" begin
-                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
-                @show extrema(λ̇.c[inx_c,iny_c])
-                @show extrema(λ̇.v[inx_v,iny_v])
-                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ) 
-                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
-                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
+                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
+                @show extrema(λ̇.c[inx_c, iny_c])
+                @show extrema(λ̇.v[inx_v, iny_v])
+                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, ξ, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
+                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
             end
 
             err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
@@ -318,8 +323,8 @@ using TimerOutputs, CairoMakie
 
             #--------------------------------------------# 
             # Stokes operator as block matrices
-            𝐊  .= [M.Vx.Vx M.Vx.Vy; M.Vy.Vx M.Vy.Vy]
-            𝐐  .= [M.Vx.Pt; M.Vy.Pt]
+            𝐊 .= [M.Vx.Vx M.Vx.Vy; M.Vy.Vx M.Vy.Vy]
+            𝐐 .= [M.Vx.Pt; M.Vy.Pt]
             𝐐ᵀ .= [M.Pt.Vx M.Pt.Vy]
             𝐏  .= M.Pt.Pt
             # Picard preconditioner
@@ -384,8 +389,8 @@ using TimerOutputs, CairoMakie
         true_sum = 0
 
         for i in inx_c, j in iny_c
-            σ  = @SMatrix[-Pt[i,j]+τ.xx[i,j] τxyc[i,j] 0.; τxyc[i,j] -Pt[i,j]+τ.yy[i,j] 0.; 0. 0. -Pt[i,j]+(-τ.xx[i,j]-τ.yy[i,j])]
-            v  = eigvecs(σ)
+            σ = @SMatrix[-Pt[i, j]+τ.xx[i, j] τxyc[i, j] 0.; τxyc[i, j] -Pt[i, j]+τ.yy[i, j] 0.; 0. 0. -Pt[i, j]+(-τ.xx[i, j]-τ.yy[i, j])]
+            v = eigvecs(σ)
             σp = eigvals(σ)
             σ1
             scale = sqrt(v[1,1]^2 + v[2,1]^2)
@@ -440,7 +445,7 @@ using TimerOutputs, CairoMakie
         # Visualise
         function figure()
             ftsz = 25
-            fig = Figure(size=(1000, 1000)) 
+            fig = Figure(size=(1000, 1000))
             empty!(fig)
 
             # Split heatmap of the apparatus
