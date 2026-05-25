@@ -144,9 +144,9 @@ using TimerOutputs, CairoMakie
     β       = (c=zeros(size_c...), v=zeros(size_v...))
     ρ       = (c=zeros(size_c...), v=zeros(size_v...))    
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
-    ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
+    ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...), θ = zeros(size_c...) )
     τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
-    τ       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
+    τ       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...), θ = zeros(size_c...) )
 
     Pt      = zeros(size_c...)
     Pti     = zeros(size_c...)
@@ -261,7 +261,7 @@ using TimerOutputs, CairoMakie
 
     rvec   = zeros(length(α))
     err    = (x = zeros(niter), y = zeros(niter), p = zeros(niter))
-    probes = (τII = zeros(nt), τIIW = zeros(nt), τIIE = zeros(nt), τIIS = zeros(nt), τIIN = zeros(nt), fric = zeros(nt), app_fric = zeros(nt), t = zeros(nt), εxx=zeros(nt), εyy=zeros(nt), σyyN=zeros(nt), σyyS=zeros(nt), σxxW=zeros(nt), σxxE=zeros(nt), PW=zeros(nt), PE=zeros(nt))
+    probes = (τII = zeros(nt), τIIW = zeros(nt), τIIE = zeros(nt), τIIS = zeros(nt), τIIN = zeros(nt), true_fric = zeros(nt), app_fric = zeros(nt), t = zeros(nt), εxx=zeros(nt), εyy=zeros(nt), σyyN=zeros(nt), σyyS=zeros(nt), σxxW=zeros(nt), σxxE=zeros(nt), PW=zeros(nt), PE=zeros(nt), minθ=zeros(nt), maxθ=zeros(nt))
     to     = TimerOutput()
 
     #--------------------------------------------#
@@ -365,10 +365,7 @@ using TimerOutputs, CairoMakie
 
         # Post process stress and strain rate
         τxyc = av2D(τ.xy)
-        # τII  = sqrt.( 0.5.*(τ.xx[inx_c,iny_c].^2 + τ.yy[inx_c,iny_c].^2 + (-τ.xx[inx_c,iny_c]-τ.yy[inx_c,iny_c]).^2) .+ τxyc[inx_c,iny_c].^2 )
-        # ε̇xyc = av2D(ε̇.xy)
-        # ε̇II  = sqrt.( 0.5.*(ε̇.xx[inx_c,iny_c].^2 + ε̇.yy[inx_c,iny_c].^2 + (-ε̇.xx[inx_c,iny_c]-ε̇.yy[inx_c,iny_c]).^2) .+ ε̇xyc[inx_c,iny_c].^2 )
-        
+
         τII_rock_gouge  = τ.II[phases.c.==1 .|| phases.c.==2]
         P_rock_gouge    =   Pt[phases.c.==1 .|| phases.c.==2]
 
@@ -380,29 +377,19 @@ using TimerOutputs, CairoMakie
         P_gouge   =  Pt[phases.c.==2]
         λ̇_gouge   =  λ̇.c[phases.c.==2]
 
-        # Principal stress
-        σ1 = (x = zeros(size(Pt)), y = zeros(size(Pt)), v = zeros(size(Pt)))
-        app_fric = zeros(size(Pt))
-        true_fric     = zeros(size(Pt))
-        Rot = @SMatrix[cos(π/2 - θgouge) sin(π/2 - θgouge) 0; -sin(π/2 - θgouge) cos(π/2 - θgouge) 0; 0 0 1.0]
-        
+        # Compute apparent and true friction locally
+        app_fric       = zeros(size(Pt))
+        true_fric      = zeros(size(Pt))
+        Rot            = @SMatrix[cos(π/2 - θgouge) sin(π/2 - θgouge) 0; -sin(π/2 - θgouge) cos(π/2 - θgouge) 0; 0 0 1.0]
         app_fric_sum   = 0.0
         true_fric_sum  = 0.0
-        app_sum  = 0
-        true_sum = 0
+        app_sum        = 0
+        true_sum       = 0
 
         for i in inx_c, j in iny_c
-            σ  = @SMatrix[-Pt[i,j]+τ.xx[i,j] τxyc[i,j] 0.; τxyc[i,j] -Pt[i,j]+τ.yy[i,j] 0.; 0. 0. -Pt[i,j]+(-τ.xx[i,j]-τ.yy[i,j])]
-            v  = eigvecs(σ)
-            σp = eigvals(σ)
-            σ1
-            scale = sqrt(v[1,1]^2 + v[2,1]^2)
-            σ1.x[i,j] = v[1,1]/scale
-            σ1.y[i,j] = v[2,1]/scale
-            σ1.v[i]   = σp[1]
-
             if phases.c[i,j] == 2 # λ̇.c[i,j] > 1e-10
                 app_sum     += 1
+                σ  = @SMatrix[-Pt[i,j]+τ.xx[i,j] τxyc[i,j] 0.; τxyc[i,j] -Pt[i,j]+τ.yy[i,j] 0.; 0. 0. -Pt[i,j]+(-τ.xx[i,j]-τ.yy[i,j])]
                 # Compute apparent friction
                 σ′             = Rot * σ * Rot'
                 app_fric[i,j]  = σ′[1,2] / σ′[2,2]
@@ -441,9 +428,13 @@ using TimerOutputs, CairoMakie
         σm = 1 *  1/2*(mean(  P_gouge) )
         τr = σd/2 * sin(2*(π/2 - θgouge))
         τn = σm + σd/2 * cos(2*(π/2 - θgouge))
-        # probes.fric[it] =  τr / τn
-        probes.fric[it] = app_fric_sum / app_sum 
-        probes.app_fric[it] =  true_fric_sum / true_sum 
+        # probes.app_fric[it] =  τr / τn
+        probes.app_fric[it] = app_fric_sum / app_sum 
+        probes.true_fric[it] =  true_fric_sum / true_sum 
+
+        # Stress angles
+        probes.minθ[it] = minimum(τ.θ[phases.c.==2])
+        probes.maxθ[it] = maximum(τ.θ[phases.c.==2])
 
         # Visualise
         function figure()
@@ -452,7 +443,7 @@ using TimerOutputs, CairoMakie
             empty!(fig)
 
             # Split heatmap of the apparatus
-            ax  = Axis(fig[1:2,1], aspect=DataAspect(), title="Apparent / True friction", xlabel="x", ylabel="y", xlabelsize=ftsz,  ylabelsize=ftsz, titlesize=ftsz)
+            ax  = Axis(fig[1:3,1], aspect=DataAspect(), title="Apparent / True friction", xlabel="x", ylabel="y", xlabelsize=ftsz,  ylabelsize=ftsz, titlesize=ftsz)
             eps   = 1e-1
             # field = (τ.xy)[inx_c,iny_c]  .* sc.σ / 1e6
             # field = app_fric[inx_c,iny_c]
@@ -464,19 +455,18 @@ using TimerOutputs, CairoMakie
             hm1 = heatmap!(ax, X.c.x[1:ind_mid_x].*sc.L, X.c.y.*sc.L, field1[1:ind_mid_x,:], colormap=:bluesreds, colorrange=(minimum(field1)-eps, maximum(field1)+eps))
             hm2 = heatmap!(ax, X.c.x[ind_mid_x:end].*sc.L, X.c.y.*sc.L, field2[ind_mid_x:end,:], colormap=:bluesreds, colorrange=(minimum(field2)-eps, maximum(field2)+eps))
             contour!(ax, X.c.x.*sc.L, X.c.y.*sc.L,  phases.c[inx_c,iny_c], color=:white)
-            Colorbar(fig[3, 1], hm1, label = L"$\phi^\text{app}$", height=30, width = 300, labelsize = 20, ticklabelsize = 20, vertical=false, valign=true, flipaxis = true )
-            Colorbar(fig[3, 2], hm2, label = L"$\phi^\text{true}$", height=30, width = 300, labelsize = 20, ticklabelsize = 20, vertical=false, valign=true, flipaxis = true )
+            Colorbar(fig[4, 1], hm1, label = L"$\phi^\text{app}$", height=30, width = 300, labelsize = 20, ticklabelsize = 20, vertical=false, valign=true, flipaxis = true )
+            Colorbar(fig[4, 2], hm2, label = L"$\phi^\text{true}$", height=30, width = 300, labelsize = 20, ticklabelsize = 20, vertical=false, valign=true, flipaxis = true )
             Vxc = (0.5*(V.x[1:end-1,2:end-1] + V.x[2:end,2:end-1]))[2:end-1,2:end-1].*sc.L/sc.t
             Vyc = (0.5*(V.y[2:end-1,1:end-1] + V.y[2:end-1,2:end]))[2:end-1,2:end-1].*sc.L/sc.t
             step = 10
             # arrows2d!(ax, X.c.x[1:step:end].*sc.L, X.c.y[1:step:end].*sc.L, Vxc[1:step:end,1:step:end], Vyc[1:step:end,1:step:end], lengthscale=50000.4, color=:white)
-            arrows2d!(ax, X.c.x[1:step:end], X.c.y[1:step:end], σ1.x[inx_c,iny_c][1:step:end,1:step:end], σ1.y[inx_c,iny_c][1:step:end,1:step:end], lengthscale=0.04, color=:white, tiplength = 0)
+            arrows2d!(ax, X.c.x[1:step:end], X.c.y[1:step:end], cos.(τ.θ)[inx_c,iny_c][1:step:end,1:step:end], sin.(τ.θ)[inx_c,iny_c][1:step:end,1:step:end], lengthscale=0.04, color=:white, tiplength = 0)
             xlims!(ax, minimum(X.v.x).*sc.L, maximum(X.v.x).*sc.L)
             lines!(ax, X.c.x[ind_mid_x].*sc.L *  ones(size(X.c.y)), X.c.y.*sc.L, color=:white, linewidth=4)
 
-
             # Zoom on the gouge
-            ax  = Axis(fig[1,2], aspect=DataAspect(), title="Plastic Strain rate", xlabel="x", ylabel="y", xlabelsize=ftsz,  ylabelsize=ftsz, titlesize=ftsz)
+            ax  = Axis(fig[2,2], aspect=DataAspect(), title="Plastic Strain rate", xlabel="x", ylabel="y", xlabelsize=ftsz,  ylabelsize=ftsz, titlesize=ftsz)
             eps   = 1e-1
             # field = (τ.xy)[inx_c,iny_c]  .* sc.σ / 1e6
             # field = app_fric[inx_c,iny_c]
@@ -486,7 +476,7 @@ using TimerOutputs, CairoMakie
             hm = heatmap!(ax, X.c.x.*sc.L, X.c.y.*sc.L, field, colormap=:bluesreds, colorrange=(minimum(field)-eps, maximum(field)+eps))
             contour!(ax, X.c.x.*sc.L, X.c.y.*sc.L,  phases.c[inx_c,iny_c], color=:white)
             # arrows2d!(ax, X.c.x[1:step:end].*sc.L, X.c.y[1:step:end].*sc.L, Vxc[1:step:end,1:step:end], Vyc[1:step:end,1:step:end], lengthscale=50000.4, color=:white)
-            arrows2d!(ax, X.c.x[1:step:end], X.c.y[1:step:end], σ1.x[inx_c,iny_c][1:step:end,1:step:end], σ1.y[inx_c,iny_c][1:step:end,1:step:end], lengthscale=0.04, color=:white, tiplength = 0)
+            arrows2d!(ax, X.c.x[1:step:end], X.c.y[1:step:end], cos.(τ.θ)[inx_c,iny_c][1:step:end,1:step:end], sin.(τ.θ)[inx_c,iny_c][1:step:end,1:step:end], lengthscale=0.04, color=:white, tiplength = 0)
             xlims!(ax, -0.35, 0.35)
             ylims!(ax, 0.5, 1.0)
 
@@ -495,7 +485,7 @@ using TimerOutputs, CairoMakie
             # scatter!(ax, 1:niter, log10.(err.y[1:niter]./err.y[1]) )
             # scatter!(ax, 1:niter, log10.(err.p[1:niter]./err.p[1]) )
             # ylims!(ax, -15, 1)
-            ax  = Axis(fig[2,2], title=L"$$Stress space", xlabel=L"$P$", ylabel=L"$\tau_{II}$", xlabelsize=ftsz, ylabelsize=ftsz, titlesize=ftsz)
+            ax  = Axis(fig[3,2], title=L"$$Stress space", xlabel=L"$P$", ylabel=L"$\tau_{II}$", xlabelsize=ftsz, ylabelsize=ftsz, titlesize=ftsz)
             P_ax       = LinRange(minimum(P_rock), maximum(P_rock), 100)
             τ_ax_rock  = materials.plasticity.C[1] * materials.plasticity.cosϕ[1] .+ P_ax.*materials.plasticity.sinϕ[1]
             τ_ax_gouge = materials.plasticity.C[2] * materials.plasticity.cosϕ[2] .+ P_ax.*materials.plasticity.sinϕ[2]
@@ -525,8 +515,13 @@ using TimerOutputs, CairoMakie
 
             ax  = Axis(fig[0,2], xlabel="time [hrs]", ylabel="-τxy/σyy", xlabelsize=ftsz, ylabelsize=ftsz, titlesize=ftsz)
             lines!(ax, probes.t[1:it]*sc.t/3600, ones(it)*tand(materials.plasticity.ϕ[2]), linestyle=:dash, color=:gray )
-            scatter!(ax, probes.t[1:it]*sc.t/3600, probes.fric[1:it] )
-            scatter!(ax, probes.t[1:it]*sc.t/3600, probes.app_fric[1:it], marker=:star5, markersize=20  )
+            scatter!(ax, probes.t[1:it]*sc.t/3600, probes.app_fric[1:it] )
+            scatter!(ax, probes.t[1:it]*sc.t/3600, probes.true_fric[1:it], marker=:star5, markersize=20  )
+            
+            ax  = Axis(fig[1,2], xlabel="time [hrs]", ylabel="σ1 angle gouge", xlabelsize=ftsz, ylabelsize=ftsz, titlesize=ftsz)
+            scatter!(ax, probes.t[1:it]*sc.t/3600, probes.minθ[1:it]*180/π )
+            # scatter!(ax, probes.t[1:it]*sc.t/3600, probes.maxθ[1:it]*180/π )
+            
             display(fig)
 
         end

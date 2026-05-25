@@ -1044,20 +1044,22 @@ end
                 𝐷.c[i, j][4, 4] = 1
 
                 # Update stress
-                τ.xx[i, j] = τ_vec[1]
-                τ.yy[i, j] = τ_vec[2]
-                τ.II[i, j] = τII_local
-                ε̇.xx[i, j] = ε̇xx
-                ε̇.yy[i, j] = ε̇yy
-                ε̇.II[i, j] = sqrt(1 / 2 * (ε̇xx^2 + ε̇yy^2) + ε̇xy^2)
-                λ̇.c[i, j] = λ̇_local
-                η.c[i, j] = η_local
+                τ.xx[i, j]  = τ_vec[1]
+                τ.yy[i, j]  = τ_vec[2]
+                τ.II[i, j]  = τII_local
+                τ.θ[i, j]   = 1/2 * atan( 2*τ_vec[3], τ_vec[1] - τ_vec[2] ) + π/2
+                ε̇.xx[i, j]  = ε̇xx
+                ε̇.yy[i, j]  = ε̇yy
+                ε̇.II[i, j]  = sqrt(1 / 2 * (ε̇xx^2 + ε̇yy^2) + ε̇xy^2)
+                ε̇.θ[i, j]   = 1/2 * atan( 2*ε̇xy, ε̇xx - ε̇yy ) + π/2
+                λ̇.c[i, j]   = λ̇_local
+                η.c[i, j]   = η_local
                 ΔPt.c[i, j] = (τ_vec[4] - Pt[i, j])
             end
         end
     end
 
-    # # For periodic cases
+    # For periodic cases
     if periodic_west
         for j = 2:size(ε̇.xx, 2)-1
             i = 1
