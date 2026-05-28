@@ -40,7 +40,7 @@ using TimerOutputs, CairoMakie
     materials.plasticity.C   .= [  1e8,    1e5,   15e60,  15e60]./sc.σ       # Cohesion
     materials.plasticity.ϕ   .= [  40.,    30.,     35.,    35.]             # Friction angle
     materials.plasticity.ψ   .= [  0.0,    5.0,     0.0,    0.0]             # Dilation angle
-    materials.plasticity.ηvp .= [ 1e14,   1e14,    1e14,   1e14].*1e-3./sc.σ./sc.t # 1e-6 Viscoplastic regularisation
+    materials.plasticity.ηvp .= [ 1e11,   1e11,    1e11,   1e11].*0.5/sc.σ./sc.t # Viscoplastic regularisation
     #                            rock    gouge     salt   plates
     preprocess!(materials)
 
@@ -251,7 +251,49 @@ using TimerOutputs, CairoMakie
     #     end
     # end
 
-    phase_ratios = InitialisePhaseRatios(phases, nphases)
+    # phase_ratios = InitialisePhaseRatios(phases, nphases)
+
+
+    # Markers 
+    nmpc = (x=4, y=4)
+    noise = false
+
+    # Initialise marker field
+    m = InitialiseMarkerField(nc, nmpc, L, Δ, x, y, noise)
+    phase_ratios, phase_weights = InitialisePhaseRatios(nphases, ε̇)
+
+    # Set material geometry: circle
+    for k in eachindex(m.phase) 
+        m.phase[k] = 1
+        𝐱 = @SVector([m.Xm[k], m.Ym[k]])
+        for igeom in eachindex(gouge) # Gouge: phase 2
+            if inside(𝐱, gouge[igeom])
+                 m.phase[k] = 2
+            end  
+        end
+        for igeom in eachindex(salt) # Salt: phase 3
+            if inside(𝐱, salt[igeom])
+                 m.phase[k] = 3
+            end  
+        end
+        for igeom in eachindex(plate) # Plate: phase 4
+            if inside(𝐱, plate[igeom])
+                 m.phase[k] = 4
+            end  
+        end
+
+    end
+
+    # Set phase ratios
+    SetPhaseRatios!(phase_ratios, phase_weights, m, X.c_e.x, X.c_e.y, X.v_e.x, X.v_e.y, Δ, nphases)
+
+    # check 
+    for I in CartesianIndices(phase_ratios.c)
+        s = sum(phase_ratios.c[I])
+        if !(s ≈ 1.0)
+            @warn "Invalid phase_ratios.c at $I: sum = $s, values = $(phase_ratios.c[I])"
+        end
+    end
 
     Pt  .= Pbg #*rand(size(Pt)...)
     Pt0 .= Pt
@@ -366,16 +408,18 @@ using TimerOutputs, CairoMakie
         # Post process stress and strain rate
         τxyc = av2D(τ.xy)
 
-        τII_rock_gouge  = τ.II[phases.c.==1 .|| phases.c.==2]
-        P_rock_gouge    =   Pt[phases.c.==1 .|| phases.c.==2]
+        isrock      = zeros(Bool, size_c)
+        isgouge     = zeros(Bool, size_c)
+        [isrock[I]  = phase_ratios.c[I][1]≈1.0 for I in eachindex(phase_ratios.c)]
+        [isgouge[I] = phase_ratios.c[I][2]≈1.0 for I in eachindex(phase_ratios.c)]
 
-        τII_rock  = τ.II[phases.c.==1]
-        P_rock    =   Pt[phases.c.==1]
-        λ̇_rock    =  λ̇.c[phases.c.==1]
+        τII_rock  = τ.II[isrock]
+        P_rock    =   Pt[isrock]
+        λ̇_rock    =  λ̇.c[isrock]
 
-        τII_gouge = τ.II[phases.c.==2]
-        P_gouge   =  Pt[phases.c.==2]
-        λ̇_gouge   =  λ̇.c[phases.c.==2]
+        τII_gouge = τ.II[isgouge]
+        P_gouge   =   Pt[isgouge]
+        λ̇_gouge   =  λ̇.c[isgouge]
 
         # Compute apparent and true friction locally
         app_fric       = zeros(size(Pt))
@@ -500,10 +544,10 @@ using TimerOutputs, CairoMakie
             # scatter!(ax, P_gouge*sc.σ/1e6, τII_gouge*sc.σ/1e6, color=:red )
 
             ax  = Axis(fig[0,1], xlabel="Displacement", ylabel="Axial stress [MPa]", xlabelsize=ftsz, ylabelsize=ftsz, titlesize=ftsz)
-            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.PW[1:it]*sc.σ./1e6, marker=:diamond, markersize=20 )
-            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.PE[1:it]*sc.σ./1e6, marker=:diamond, markersize=20 )
-            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.σxxW[1:it]*sc.σ./1e6, marker=:star5, markersize=20 )
-            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.σxxE[1:it]*sc.σ./1e6, marker=:star5, markersize=20 )
+            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.PW[1:it]*sc.σ./1e6, marker=:diamond ) #, markersize=20
+            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.PE[1:it]*sc.σ./1e6, marker=:diamond ) #, markersize=20
+            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.σxxW[1:it]*sc.σ./1e6, marker=:star5 ) #, markersize=20
+            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.σxxE[1:it]*sc.σ./1e6, marker=:star5 ) #, markersize=20
             scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.σyyN[1:it]*sc.σ./1e6, marker=:circle )
             scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.σyyS[1:it]*sc.σ./1e6, marker=:circle )
 
@@ -517,7 +561,7 @@ using TimerOutputs, CairoMakie
             ax  = Axis(fig[0,2], xlabel="time [hrs]", ylabel="-τxy/σyy", xlabelsize=ftsz, ylabelsize=ftsz, titlesize=ftsz)
             lines!(ax, probes.t[1:it]*sc.t/3600, ones(it)*tand(materials.plasticity.ϕ[2]), linestyle=:dash, color=:gray )
             scatter!(ax, probes.t[1:it]*sc.t/3600, probes.app_fric[1:it] )
-            scatter!(ax, probes.t[1:it]*sc.t/3600, probes.true_fric[1:it], marker=:star5, markersize=20  )
+            scatter!(ax, probes.t[1:it]*sc.t/3600, probes.true_fric[1:it], marker=:star5) #, markersize=20  
             
             ax  = Axis(fig[1,2], xlabel="time [hrs]", ylabel="σ1 angle gouge", xlabelsize=ftsz, ylabelsize=ftsz, titlesize=ftsz)
             scatter!(ax, probes.t[1:it]*sc.t/3600, probes.minθ[1:it]*180/π )
