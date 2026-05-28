@@ -1,7 +1,6 @@
 using StagFDTools, ExtendableSparse, StaticArrays, Plots, LinearAlgebra, SparseArrays
 import Statistics:mean
 using DifferentiationInterface
-using Enzyme  # AD backends you want to use
 # import CairoMakie
 
 include("../examples/Stokes/BasicIterativeSolvers.jl")

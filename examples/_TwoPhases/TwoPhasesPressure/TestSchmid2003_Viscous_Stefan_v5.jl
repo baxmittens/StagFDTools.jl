@@ -2,7 +2,6 @@ using StagFDTools, StagFDTools.TwoPhases
 using JLD2, ExtendableSparse, StaticArrays, CairoMakie, LinearAlgebra, SparseArrays, Printf, JLD2, ExactFieldSolutions, GridGeometryUtils
 import Statistics:mean
 using DifferentiationInterface
-using Enzyme  # AD backends you want to use
 
 function test_sol2( X; params=(η0=1.0, η1=1e-1, ξ0=1e30, ξ1=1e30, R=0.1, γ̇=1.0) )
     η0, η1, ξ0, ξ1, R, γ̇ = params

@@ -236,7 +236,6 @@ function Continuity(Vx, Vy, Pt_loc, Pf_loc, old, phase, materials, type, bcv, Δ
         fp     = ∂ρim∂t  +  (qx[2] - qx[1]) * invΔx + (qy[2] - qy[1]) * invΔy
         # fp      = dlnρsdt[2,2] - dΦdt[2,2]/(1-Φ[2,2]) +   divVs
     end
-    # fp    *= max(invΔx, invΔy)
     return fp
 end
 
@@ -271,13 +270,13 @@ function FluidContinuity(Vx, Vy, Pt_loc, Pf_loc, ΔPf_loc, old, phase, materials
         dΦdt    = SMatrix{3, 3}( Porosity(Φ0[ii], Pt[ii], Pf[ii], Pt0[ii], Pf0[ii], KΦ[ii], ηΦ[ii], m[ii], 0., 0., Δt)[2] for ii in eachindex(Φ0) )
     end
 
-    if Φ[1]<0 || Φ[2] <0 ||  Φ[3] <0
-        @show Φ
-        @show Pt
-        @show Pf
-        @show Pt0
-        @show Pf0
-    end
+    # if Φ[1]<0 || Φ[2] <0 ||  Φ[3] <0
+    #     @show Φ
+    #     @show Pt
+    #     @show Pf
+    #     @show Pt0
+    #     @show Pf0
+    # end
     
     dPsdt   = SMatrix{3, 3}( @. dΦdt*(Pt - Pf*Φ)/(1-Φ)^2 + (dPtdt - Φ*dPfdt - Pf*dΦdt) / (1 - Φ) )
     dlnρsdt = SMatrix{3, 3}( @. 1/Ks * ( dPsdt ) )
