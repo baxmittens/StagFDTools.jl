@@ -428,33 +428,18 @@ import Statistics:mean
             eps  = 1e-10
 
             ax    = Axis(fig[1,1], aspect=DataAspect(), title=L"$P^t$ numerics", xlabel=L"x", ylabel=L"y")
-            field = (η.c)[inx_c,iny_c].*sc.σ
+            field = (Pt_viz)[inx_c,iny_c].*sc.σ
             hm    = heatmap!(ax, X.c.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
             contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
             hidexdecorations!(ax)
             Colorbar(fig[2, 1], hm, label = L"$P^t$ numerics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
             
-            ax    = Axis(fig[1,2], aspect=DataAspect(), title=L"$P^t$ numerics", xlabel=L"x", ylabel=L"y")
-            field = (η.v)[inx_v,iny_v].*sc.σ
-            hm    = heatmap!(ax, X.v.x, X.v.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            # contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
+            ax    = Axis(fig[1,2], aspect=DataAspect(), title=L"$P^t$ analytics", xlabel=L"x", ylabel=L"y")
+            field = (Pt_ana)[inx_c,iny_c].*sc.σ
+            hm    = heatmap!(ax, X.c.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
+            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
             hidexdecorations!(ax)
-            Colorbar(fig[2, 2], hm, label = L"$P^t$ numerics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
-          
-
-            # ax    = Axis(fig[1,1], aspect=DataAspect(), title=L"$P^t$ numerics", xlabel=L"x", ylabel=L"y")
-            # field = (Pt_viz)[inx_c,iny_c].*sc.σ
-            # hm    = heatmap!(ax, X.c.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            # contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
-            # hidexdecorations!(ax)
-            # Colorbar(fig[2, 1], hm, label = L"$P^t$ numerics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
-            
-            # ax    = Axis(fig[1,2], aspect=DataAspect(), title=L"$P^t$ analytics", xlabel=L"x", ylabel=L"y")
-            # field = (Pt_ana)[inx_c,iny_c].*sc.σ
-            # hm    = heatmap!(ax, X.c.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            # contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
-            # hidexdecorations!(ax)
-            # Colorbar(fig[2, 2], hm, label = L"$P^t$ analytics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
+            Colorbar(fig[2, 2], hm, label = L"$P^t$ analytics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
 
             ax    = Axis(fig[1,3], aspect=DataAspect(), title=L"$P^t$ error", xlabel=L"x", ylabel=L"y")
             field = (ϵP)[inx_c,iny_c].*sc.σ
@@ -466,10 +451,6 @@ import Statistics:mean
             ###########################
             ax    = Axis(fig[3,1], aspect=DataAspect(), title=L"$V_{x}$ numerics", xlabel=L"x", ylabel=L"y")
             field = (Vx_viz)[inx_Vx,iny_Vx].*sc.σ
-
-            field = (R.x)[inx_Vx,iny_Vx].*sc.σ
-
-
             hm    = heatmap!(ax, X.v.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
             contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
             hidexdecorations!(ax)
@@ -491,13 +472,9 @@ import Statistics:mean
 
             ###########################
             ax    = Axis(fig[5,1], aspect=DataAspect(), title=L"$V_{y}$ numerics", xlabel=L"x", ylabel=L"y")
-            # field = (Vy_viz)[inx_Vy,iny_Vy].*sc.σ
-            # hm    = heatmap!(ax, X.v.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-
-            field = (R.y)[inx_Vy,iny_Vy].*sc.σ
-            hm    = heatmap!(ax, X.v.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1))
-            
-            # contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
+            field = (Vy_viz)[inx_Vy,iny_Vy].*sc.σ
+            hm    = heatmap!(ax, X.v.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
+            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
             hidexdecorations!(ax)
             Colorbar(fig[6, 1], hm, label = L"$V_{y}$ numerics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
             
