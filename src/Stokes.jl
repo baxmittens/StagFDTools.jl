@@ -85,7 +85,37 @@ function set_boundaries_template!(type, config, nc)
         type.Vy[inx_Vy, 1] .= :Neumann_normal
         type.Vy[inx_Vy, end] .= :Neumann_normal
         # -------- Pt -------- #
-        type.Pt[2:end-1, 2:end-1] .= :in
+        type.Pt[2:end-1,2:end-1] .= :in
+    elseif config == :NS_stress
+        # -------- Vx -------- #
+        type.Vx[inx_Vx,iny_Vx]  .= :in       
+        type.Vx[2,iny_Vx]       .= :Dirichlet_normal 
+        type.Vx[end-1,iny_Vx]   .= :Dirichlet_normal 
+        type.Vx[inx_Vx,2]       .= :Dirichlet_tangent
+        type.Vx[inx_Vx,end-1]   .= :Dirichlet_tangent
+        # -------- Vy -------- #
+        type.Vy[inx_Vy,iny_Vy]  .= :in       
+        type.Vy[2,iny_Vy]       .= :Dirichlet_tangent
+        type.Vy[end-1,iny_Vy]   .= :Dirichlet_tangent
+        type.Vy[inx_Vy,1]       .= :normal_stress
+        type.Vy[inx_Vy,end]     .= :normal_stress
+        # -------- Pt -------- #
+        type.Pt[2:end-1,2:end-1] .= :in
+    elseif config == :N_StressFree
+        # -------- Vx -------- #
+        type.Vx[inx_Vx,iny_Vx]  .= :in       
+        type.Vx[2,iny_Vx]       .= :Dirichlet_normal 
+        type.Vx[end-1,iny_Vx]   .= :Dirichlet_normal 
+        type.Vx[inx_Vx,2]       .= :Neumann_tangent
+        type.Vx[inx_Vx,end-1]   .= :Neumann_tangent
+        # -------- Vy -------- #
+        type.Vy[inx_Vy,iny_Vy]  .= :in       
+        type.Vy[2,iny_Vy]       .= :Neumann_tangent
+        type.Vy[end-1,iny_Vy]   .= :Neumann_tangent
+        type.Vy[inx_Vy,2]       .= :Dirichlet_normal 
+        type.Vy[inx_Vy,end]     .= :Neumann_normal
+        # -------- Pt -------- #
+        type.Pt[2:end-1,2:end-1] .= :in
 
     elseif config == :EW_Neumann
         # -------- Vx -------- #
@@ -101,8 +131,24 @@ function set_boundaries_template!(type, config, nc)
         type.Vy[inx_Vy, 2] .= :Dirichlet_normal
         type.Vy[inx_Vy, end-1] .= :Dirichlet_normal
         # -------- Pt -------- #
-        type.Pt[2:end-1, 2:end-1] .= :in
-
+        type.Pt[2:end-1,2:end-1] .= :in
+        # type.Pt[[1,end],2:end-1] .= :Neumann_normal
+elseif config == :EW_stress
+        # -------- Vx -------- #
+        type.Vx[inx_Vx,iny_Vx]  .= :in      
+        type.Vx[1,iny_Vx]       .= :normal_stress
+        type.Vx[end,iny_Vx]     .= :normal_stress
+        type.Vx[inx_Vx,2]       .= :Dirichlet_tangent
+        type.Vx[inx_Vx,end-1]   .= :Dirichlet_tangent
+        # -------- Vy -------- #
+        type.Vy[inx_Vy,iny_Vy]  .= :in       
+        type.Vy[2,iny_Vy]       .= :Dirichlet_tangent
+        type.Vy[end-1,iny_Vy]   .= :Dirichlet_tangent
+        type.Vy[inx_Vy,2]       .= :Dirichlet_normal 
+        type.Vy[inx_Vy,end-1]   .= :Dirichlet_normal 
+        # -------- Pt -------- #
+        type.Pt[2:end-1,2:end-1] .= :in
+        # type.Pt[[1,end],2:end-1] .= :Neumann_normal
     elseif config == :free_slip
         # -------- Vx -------- #
         type.Vx[inx_Vx, iny_Vx] .= :in
@@ -155,8 +201,8 @@ function set_boundaries_template!(type, config, nc)
 end
 
 function SMomentum_x_Generic(Vx_loc, Vy_loc, Pt, ΔP, τ0, G_loc, 𝐷, materials, type, bcv, Δ)
-
-    invΔx, invΔy = 1 / Δ.x, 1 / Δ.y
+    
+    invΔx, invΔy, BC_sym = 1 / Δ.x, 1 / Δ.y, 1.0
 
     # BC
     Vx = SetBCVx1(Vx_loc, type.x, bcv.x, Δ)
@@ -217,18 +263,29 @@ function SMomentum_x_Generic(Vx_loc, Vy_loc, Pt, ΔP, τ0, G_loc, 𝐷, material
         𝐷.v[i][3, 1] * ϵ̇xx_v[i] + 𝐷.v[i][3, 2] * ϵ̇yy_v[i] + 𝐷.v[i][3, 3] * ϵ̇xy_v[i] + 𝐷.v[i][3, 4] * Pt_v[i] for i = 1:2
     )
 
+    # Apply normal stress BC 
+    if type.x[1,2] == :normal_stress
+        σxx = SVector{2}([2*bcv.x[2,2]-σxx[2] σxx[2]])
+        BC_sym = 1 / 2 
+    end
+    if type.x[end,2] == :normal_stress
+        σxx = SVector{2}([σxx[1] 2*bcv.x[end-1,2]-σxx[1] ])
+        BC_sym = 1 / 2 
+    end
+
     # Residual
     fx = (σxx[2] - σxx[1]) * invΔx
     fx += (τxy[2] - τxy[1]) * invΔy
     fx *= -Δ.x * Δ.y
+    fx *= BC_sym
 
     return fx
 end
 
 function SMomentum_y_Generic(Vx_loc, Vy_loc, Pt, ΔP, τ0, G_loc, ρ_loc, 𝐷, materials, type, bcv, Δ)
 
-    invΔx, invΔy = 1 / Δ.x, 1 / Δ.y
-
+    invΔx, invΔy, BC_sym = 1 / Δ.x, 1 / Δ.y, 1.0 
+ 
     # BC
     Vx = SetBCVx1(Vx_loc, type.x, bcv.x, Δ)
     Vy = SetBCVy1(Vy_loc, type.y, bcv.y, Δ)
@@ -294,12 +351,23 @@ function SMomentum_y_Generic(Vx_loc, Vy_loc, Pt, ΔP, τ0, G_loc, ρ_loc, 𝐷, 
     ρ = SVector{2}(ρ_loc[1, i] for i = 1:2)
     ρg = materials.g[2] * 0.5 * (ρ[1] + ρ[2])
 
+    # Apply normal stress BC 
+    if type.x[2,1] == :normal_stress
+        σyy = SVector{2}([2*bcv.y[2,2]-σyy[2] σyy[2]])
+        BC_sym = 1 / 2 
+    end
+    if type.y[2,end] == :normal_stress
+        σyy = SVector{2}([σyy[1] 2*bcv.y[2,end-1]-σyy[1] ])
+        BC_sym = 1 / 2 
+    end
+
     # Residual
     fy = (σyy[2] - σyy[1]) * invΔy
     fy += (τxy[2] - τxy[1]) * invΔx
     fy += ρg
     fy *= -Δ.x * Δ.y
-
+    fy *= BC_sym
+    
     return fy
 end
 
@@ -326,8 +394,6 @@ function ResidualMomentum2D_x!(R, V, P, P0, ΔP, τ0, 𝐷, G, materials, number
                 typex_loc = SMatrix{3,3}(type.Vx[ii, jj] for ii in i-1:i+1, jj in j-1:j+1)
                 typey_loc = SMatrix{4,4}(type.Vy[ii, jj] for ii in i-1:i+2, jj in j-2:j+1)
                 typep_loc = SMatrix{2,1}(type.Pt[ii, jj] for ii in i-1:i-0, jj in j-1:j-1)
-                # phc_loc    = SMatrix{2,1}( phases.c[ii,jj] for ii in i-1:i,   jj in j-1:j-1)
-                # phv_loc    = SMatrix{1,2}( phases.v[ii,jj] for ii in i-0:i-0, jj in j-1:j-0)
                 P_loc = SMatrix{2,3}(P[ii, jj] for ii in i-1:i, jj in j-2:j)
                 ΔP_loc = SMatrix{2,1}(ΔP.c[ii, jj] for ii in i-1:i, jj in j-1:j-1)
                 τxx0 = SMatrix{2,3}(τ0.xx[ii, jj] for ii in i-1:i, jj in j-2:j)
@@ -340,7 +406,6 @@ function ResidualMomentum2D_x!(R, V, P, P0, ΔP, τ0, 𝐷, G, materials, number
                 Dv = SMatrix{1,2}(𝐷.v[ii, jj] for ii in i-0:i-0, jj in j-1:j-0)
                 bcv_loc = (x=bcx_loc, y=bcy_loc)
                 type_loc = (x=typex_loc, y=typey_loc, p=typep_loc)
-                # ph_loc     = (c=phc_loc, v=phv_loc)
                 D = (c=Dc, v=Dv)
                 τ0_loc = (xx=τxx0, yy=τyy0, xy=τxy0)
                 G_loc = (c=Gc_loc, v=Gv_loc)
@@ -365,8 +430,6 @@ function AssembleMomentum2D_x!(K, V, P, P0, ΔP, τ0, 𝐷, G, materials, num, p
                 typex_loc = SMatrix{3,3}(type.Vx[ii, jj] for ii in i-1:i+1, jj in j-1:j+1)
                 typey_loc = SMatrix{4,4}(type.Vy[ii, jj] for ii in i-1:i+2, jj in j-2:j+1)
                 typep_loc = SMatrix{2,1}(type.Pt[ii, jj] for ii in i-1:i-0, jj in j-1:j-1)
-                # phc_loc    = SMatrix{2,1}( phases.c[ii,jj] for ii in i-1:i,   jj in j-1:j-1)
-                # phv_loc    = SMatrix{1,2}( phases.v[ii,jj] for ii in i-0:i-0, jj in j-1:j-0) 
 
                 Vx_loc = SMatrix{3,3}(V.x[ii, jj] for ii in i-1:i+1, jj in j-1:j+1)
                 Vy_loc = SMatrix{4,4}(V.y[ii, jj] for ii in i-1:i+2, jj in j-2:j+1)
@@ -981,29 +1044,22 @@ end
                 𝐷.c[i, j][4, 4] = 1
 
                 # Update stress
-                τ.xx[i, j] = τ_vec[1]
-                τ.yy[i, j] = τ_vec[2]
-                τ.II[i, j] = τII_local
-                ε̇.xx[i, j] = ε̇xx
-                ε̇.yy[i, j] = ε̇yy
-                ε̇.II[i, j] = sqrt(1 / 2 * (ε̇xx^2 + ε̇yy^2) + ε̇xy^2)
-                λ̇.c[i, j] = λ̇_local
-                η.c[i, j] = η_local
+                τ.xx[i, j]  = τ_vec[1]
+                τ.yy[i, j]  = τ_vec[2]
+                τ.II[i, j]  = τII_local
+                τ.θ[i, j]   = 1/2 * atan( 2*τ_vec[3], τ_vec[1] - τ_vec[2] ) + π/2
+                ε̇.xx[i, j]  = ε̇xx
+                ε̇.yy[i, j]  = ε̇yy
+                ε̇.II[i, j]  = sqrt(1 / 2 * (ε̇xx^2 + ε̇yy^2) + ε̇xy^2)
+                ε̇.θ[i, j]   = 1/2 * atan( 2*ε̇xy, ε̇xx - ε̇yy ) + π/2
+                λ̇.c[i, j]   = λ̇_local
+                η.c[i, j]   = η_local
                 ΔPt.c[i, j] = (τ_vec[4] - Pt[i, j])
             end
         end
     end
 
-    # for j=2:size(ε̇.xx,2)-1 
-    #         i = 1
-    #         @views 𝐷_ctl.c[i,j] .= -𝐷_ctl.c[2,j]
-    #         @views 𝐷.c[i,j]     .= -𝐷.c[2,j]
-    #         i = size(ε̇.xx,1)
-    #         @views 𝐷_ctl.c[i,j] .= -𝐷_ctl.c[1,j]
-    #         @views 𝐷.c[i,j]     .= -𝐷.c[1,j]
-    # end
-
-    # # For periodic cases
+    # For periodic cases
     if periodic_west
         for j = 2:size(ε̇.xx, 2)-1
             i = 1
@@ -1067,15 +1123,6 @@ end
             _2GΔt = inv(2 * G.v[i, j] * Δ.t)
             ϵ̇xx, ϵ̇yy, ϵ̇xy = effective_strain_rate(ε̇xx, ε̇yy, ε̇xy, τ0xx, τ0yy, τ0xy, _2GΔt)
             ε̇vec = SVector{4}(ϵ̇xx, ϵ̇yy, ϵ̇xy, P̄)
-
-            # if abs(ε̇vec[1]>1e-4)
-            # display(typex)
-            # display(bcx)
-            # display(Vx)
-            # display(V̄x)
-            # display(Δ.x)
-            # display( ε̇vec )
-            # end
 
             # Tangent operator used for Newton Linearisation
             stress_state = StressVector!(ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.v[i, j], Δ)

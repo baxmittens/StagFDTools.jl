@@ -2,7 +2,6 @@ using StagFDTools, StagFDTools.TwoPhases
 using JLD2, ExtendableSparse, StaticArrays, CairoMakie, LinearAlgebra, SparseArrays, Printf, JLD2, ExactFieldSolutions, GridGeometryUtils
 import Statistics:mean
 using DifferentiationInterface
-using Enzyme  # AD backends you want to use
 
 function test_sol2( X; params=(η0=1.0, η1=1e-1, ξ0=1e30, ξ1=1e30, R=0.1, γ̇=1.0) )
     η0, η1, ξ0, ξ1, R, γ̇ = params
@@ -184,7 +183,7 @@ end
     Φ   = (c=zeros(size_c...), v=zeros(size_v...) )
     Φ0  = (c=zeros(size_c...), v=zeros(size_v...) )
     εp  = zeros(size_c...)
-    ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
+    ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...), θ = zeros(size_c...) )
     τ0      = (xx = ones(size_c...), yy = ones(size_c...), xy = zeros(size_v...) )
     τ       = (xx = ones(size_c...), yy = ones(size_c...), xy = zeros(size_v...), II = zeros(size_c...), f = zeros(size_c...) )
     Dc      =  [@MMatrix(zeros(5,5)) for _ in axes(ε̇.xx,1), _ in axes(ε̇.xx,2)]

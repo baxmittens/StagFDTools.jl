@@ -29,20 +29,19 @@ using TimerOutputs, CairoMakie
                           0  -ε̇xx ])
     σ_BC   = @SMatrix( [ -Pbg  0.;
                           0  -Pbg ])
-                          
+
     # Material parameters
-    nphases                   = 4
-    materials                 = initialize_materials( nphases, compressible = true, plasticity = DruckerPrager )
-    materials.n              .= [  1.0,    1.0,     1.0,    1.0]             # Power law exponent
-    materials.η0             .= [ 1e48,   1e28,    1e10,   1e48]./sc.σ./sc.t # Reference viscosity 
-    materials.G              .= [ 1e10,    5e9,    1e60,   1e10]./sc.σ       # Shear modulus
-    materials.β              .= [1e-11,  1e-10,   1e-12,  1e-12].*sc.σ       # Compressibility
-    materials.plasticity.C   .= [  1e8,    1e5,   15e60,  15e60]./sc.σ       # Cohesion
-    materials.plasticity.ϕ   .= [  40.,    30.,     35.,    35.]             # Friction angle
-    materials.plasticity.ψ   .= [  0.0,    5.0,     0.0,    0.0]             # Dilation angle
-    materials.plasticity.ηvp .= [ 1e11,   1e11,    1e11,   1e11].*0.5/sc.σ./sc.t # Viscoplastic regularisation
+    materials_properties      = initialize_materials( 4, compressible = true, plasticity = :DruckerPrager )
+    materials_properties.n   .= [  1.0,    1.0,     1.0,    1.0]      # Power law exponent
+    materials_properties.η0  .= [ 1e48,   1e28,    1e10,   1e48]./sc.σ./sc.t      # Reference viscosity 
+    materials_properties.G   .= [ 1e10,    5e9,    1e60,   1e10]./sc.σ      # Shear modulus
+    materials_properties.C   .= [  1e8,    1e5,   15e60,  15e60]./sc.σ      # Cohesion
+    materials_properties.ϕ   .= [  40.,    40.,     35.,    35.]      # Friction angle
+    materials_properties.ψ   .= [  0.0,    5.0,     0.0,    0.0]      # Dilation angle
+    materials_properties.ηvp .= [ 1e14,   1e14,    1e14,   1e14].*1e-3./sc.σ./sc.t # 1e-6 Viscoplastic regularisation
+    materials_properties.β   .= [1e-11,  1e-10,   1e-12,  1e-12].*sc.σ      # Compressibility
     #                            rock    gouge     salt   plates
-    preprocess!(materials)
+    materials                 = preprocess_materials( materials_properties )
 
     # Geometry
     L     = (x=width/sc.L, y=height/sc.L)
@@ -62,10 +61,10 @@ using TimerOutputs, CairoMakie
     )
 
     # Time steps
-    nt    = 500
+    nt    = 2
 
       # Newton solver
-    niter    = 20     # max. number of non-linear iters
+    niter    = 10     # max. number of non-linear iters
     γ        = 1e5    # penalty viscosity
     ϵ_l      = 1e-11  # linear solver tolerance
     ϵ_nl     = 1e-9   # non-linear solver tolerance
@@ -127,8 +126,8 @@ using TimerOutputs, CairoMakie
     𝐐ᵀ_PC= ExtendableSparseMatrix(nPt, nVx + nVy)
     𝐏    = ExtendableSparseMatrix(nPt, nPt)
     𝐏_PC = ExtendableSparseMatrix(nPt, nPt)
-    dx = zeros(nVx + nVy + nPt)
-    r  = zeros(nVx + nVy + nPt)
+    dx   = zeros(nVx + nVy + nPt)
+    r    = zeros(nVx + nVy + nPt)
 
     #--------------------------------------------#
     # Discretisation
@@ -139,10 +138,7 @@ using TimerOutputs, CairoMakie
     V       = (x  = zeros(size_x...), y  = zeros(size_y...))
     Vi      = (x  = zeros(size_x...), y  = zeros(size_y...))
     η       = (c  =  ones(size_c...), v  =  ones(size_v...) )
-    ξ       = (c=ones(size_c...), v=ones(size_v...))
-    G       = (c=zeros(size_c...), v=zeros(size_v...))
-    β       = (c=zeros(size_c...), v=zeros(size_v...))
-    ρ       = (c=zeros(size_c...), v=zeros(size_v...))    
+    ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
     ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...), θ = zeros(size_c...) )
     τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
@@ -251,50 +247,6 @@ using TimerOutputs, CairoMakie
     #     end
     # end
 
-    # phase_ratios = InitialisePhaseRatios(phases, nphases)
-
-
-    # Markers 
-    nmpc = (x=4, y=4)
-    noise = false
-
-    # Initialise marker field
-    m = InitialiseMarkerField(nc, nmpc, L, Δ, x, y, noise)
-    phase_ratios, phase_weights = InitialisePhaseRatios(nphases, ε̇)
-
-    # Set material geometry: circle
-    for k in eachindex(m.phase) 
-        m.phase[k] = 1
-        𝐱 = @SVector([m.Xm[k], m.Ym[k]])
-        for igeom in eachindex(gouge) # Gouge: phase 2
-            if inside(𝐱, gouge[igeom])
-                 m.phase[k] = 2
-            end  
-        end
-        for igeom in eachindex(salt) # Salt: phase 3
-            if inside(𝐱, salt[igeom])
-                 m.phase[k] = 3
-            end  
-        end
-        for igeom in eachindex(plate) # Plate: phase 4
-            if inside(𝐱, plate[igeom])
-                 m.phase[k] = 4
-            end  
-        end
-
-    end
-
-    # Set phase ratios
-    SetPhaseRatios!(phase_ratios, phase_weights, m, X.c_e.x, X.c_e.y, X.v_e.x, X.v_e.y, Δ, nphases)
-
-    # check 
-    for I in CartesianIndices(phase_ratios.c)
-        s = sum(phase_ratios.c[I])
-        if !(s ≈ 1.0)
-            @warn "Invalid phase_ratios.c at $I: sum = $s, values = $(phase_ratios.c[I])"
-        end
-    end
-
     Pt  .= Pbg #*rand(size(Pt)...)
     Pt0 .= Pt
     Pti .= Pt
@@ -303,7 +255,7 @@ using TimerOutputs, CairoMakie
 
     rvec   = zeros(length(α))
     err    = (x = zeros(niter), y = zeros(niter), p = zeros(niter))
-    probes = (τII = zeros(nt), τIIW = zeros(nt), τIIE = zeros(nt), τIIS = zeros(nt), τIIN = zeros(nt), true_fric = zeros(nt), app_fric = zeros(nt), t = zeros(nt), εxx=zeros(nt), εyy=zeros(nt), σyyN=zeros(nt), σyyS=zeros(nt), σxxW=zeros(nt), σxxE=zeros(nt), PW=zeros(nt), PE=zeros(nt), minθ=zeros(nt), maxθ=zeros(nt), meanθ=zeros(nt))
+    probes = (τII = zeros(nt), τIIW = zeros(nt), τIIE = zeros(nt), τIIS = zeros(nt), τIIN = zeros(nt), fric = zeros(nt), fric_gouge = zeros(nt), t = zeros(nt), εxx=zeros(nt), εyy=zeros(nt), σyyN=zeros(nt), σyyS=zeros(nt), σxxW=zeros(nt), σxxE=zeros(nt), PW=zeros(nt), PE=zeros(nt))
     to     = TimerOutput()
 
     #--------------------------------------------#
@@ -321,8 +273,6 @@ using TimerOutputs, CairoMakie
         τ0.xy .= τ.xy
         Pt0   .= Pt
 
-        compute_grid_fields!(G, β, ρ, ξ, materials, phase_ratios, nc, nphases)
-
         @printf("Time step %04d (nthreads = %03d)\n", it, Threads.nthreads())
         iter, ϵ0, ϵ = 0, 0.0, 0.
 
@@ -335,12 +285,12 @@ using TimerOutputs, CairoMakie
             #--------------------------------------------#
             # Residual check        
             @timeit to "Residual" begin
-                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, Pt, Pt0, ΔPt, type, BC, materials, phase_ratios, Δ)
+                TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, ξ, V, Pt, Pt0, ΔPt, type, BC, materials, phases, Δ)
                 @show extrema(λ̇.c[inx_c,iny_c])
                 @show extrema(λ̇.v[inx_v,iny_v])
-                ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, β, ξ, materials, number, type, BC, nc, Δ)
-                ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, materials, number, type, BC, nc, Δ)
-                ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, G, ρ, materials, number, type, BC, nc, Δ)
+                @time ResidualContinuity2D!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ) 
+                @time ResidualMomentum2D_x!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
+                @time ResidualMomentum2D_y!(R, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
             end
 
             err.x[iter] = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
@@ -357,13 +307,13 @@ using TimerOutputs, CairoMakie
             # Assembly
             @timeit to "Assembly" begin
                 # Jacobian
-                AssembleContinuity2D!(   M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, β, ξ, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_x!(   M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(   M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, G, ρ, materials, number, pattern, type, BC, nc, Δ)
+                AssembleContinuity2D!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_x!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M, V, Pt, Pt0, ΔPt, τ0, 𝐷_ctl, phases, materials, number, pattern, type, BC, nc, Δ)
                 # Preconditioner
-                AssembleContinuity2D!(M_PC, V, Pt, Pt0, ΔPt, τ0,     𝐷, β, ξ, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_x!(M_PC, V, Pt, Pt0, ΔPt, τ0,     𝐷, G, materials, number, pattern, type, BC, nc, Δ)
-                AssembleMomentum2D_y!(M_PC, V, Pt, Pt0, ΔPt, τ0,     𝐷, G, ρ, materials, number, pattern, type, BC, nc, Δ)
+                AssembleContinuity2D!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_x!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, pattern, type, BC, nc, Δ)
+                AssembleMomentum2D_y!(M_PC, V, Pt, Pt0, ΔPt, τ0, 𝐷, phases, materials, number, pattern, type, BC, nc, Δ)
             end
 
             #--------------------------------------------# 
@@ -396,8 +346,9 @@ using TimerOutputs, CairoMakie
 
             #--------------------------------------------#
             # Line search & solution update
-            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, G, β, ξ, ρ, 𝐷, 𝐷_ctl, number, type, BC, materials, phase_ratios, nc, Δ)
+            @timeit to "Line search" imin = LineSearch!(rvec, α, dx, R, V, Pt, ε̇, τ, Vi, Pti, ΔPt, Pt0, τ0, λ̇, η, ξ, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
             UpdateSolution!(V, Pt, α[imin]*dx, number, type, nc)
+
         end
 
         # Update pressure
@@ -407,46 +358,47 @@ using TimerOutputs, CairoMakie
 
         # Post process stress and strain rate
         τxyc = av2D(τ.xy)
+        # τII  = sqrt.( 0.5.*(τ.xx[inx_c,iny_c].^2 + τ.yy[inx_c,iny_c].^2 + (-τ.xx[inx_c,iny_c]-τ.yy[inx_c,iny_c]).^2) .+ τxyc[inx_c,iny_c].^2 )
+        # ε̇xyc = av2D(ε̇.xy)
+        # ε̇II  = sqrt.( 0.5.*(ε̇.xx[inx_c,iny_c].^2 + ε̇.yy[inx_c,iny_c].^2 + (-ε̇.xx[inx_c,iny_c]-ε̇.yy[inx_c,iny_c]).^2) .+ ε̇xyc[inx_c,iny_c].^2 )
+        
+        τII_rock_gouge  = τ.II[phases.c.==1 .|| phases.c.==2]
+        P_rock_gouge    =   Pt[phases.c.==1 .|| phases.c.==2]
 
-        isrock      = zeros(Bool, size_c)
-        isgouge     = zeros(Bool, size_c)
-        [isrock[I]  = phase_ratios.c[I][1]≈1.0 for I in eachindex(phase_ratios.c)]
-        [isgouge[I] = phase_ratios.c[I][2]≈1.0 for I in eachindex(phase_ratios.c)]
+        τII_rock  = τ.II[phases.c.==1]
+        P_rock    =   Pt[phases.c.==1]
+        λ̇_rock    =  λ̇.c[phases.c.==1]
 
-        τII_rock  = τ.II[isrock]
-        P_rock    =   Pt[isrock]
-        λ̇_rock    =  λ̇.c[isrock]
+        τII_gouge = τ.II[phases.c.==2]
+        P_gouge   =  Pt[phases.c.==2]
+        λ̇_gouge   =  λ̇.c[phases.c.==2]
 
-        τII_gouge = τ.II[isgouge]
-        P_gouge   =   Pt[isgouge]
-        λ̇_gouge   =  λ̇.c[isgouge]
-
-        # Compute apparent and true friction locally
-        app_fric       = zeros(size(Pt))
-        true_fric      = zeros(size(Pt))
-        Rot            = @SMatrix[cos(π/2 - θgouge) sin(π/2 - θgouge) 0; -sin(π/2 - θgouge) cos(π/2 - θgouge) 0; 0 0 1.0]
-        app_fric_sum   = 0.0
-        true_fric_sum  = 0.0
-        app_sum        = 0
-        true_sum       = 0
+        # Principal stress
+        σ1 = (x = zeros(size(Pt)), y = zeros(size(Pt)), v = zeros(size(Pt)))
+        fric_gouge = zeros(size(Pt))
+        Rot = @SMatrix[cos(π/2 - θgouge) sin(π/2 - θgouge) 0; -sin(π/2 - θgouge) cos(π/2 - θgouge) 0; 0 0 1.0]
+        
+        fric_sum  = 0.0
+        gouge_sum = 0
 
         for i in inx_c, j in iny_c
-            if phases.c[i,j] == 2 # λ̇.c[i,j] > 1e-10
-                app_sum     += 1
-                σ  = @SMatrix[-Pt[i,j]+τ.xx[i,j] τxyc[i,j] 0.; τxyc[i,j] -Pt[i,j]+τ.yy[i,j] 0.; 0. 0. -Pt[i,j]+(-τ.xx[i,j]-τ.yy[i,j])]
-                # Compute apparent friction
-                σ′             = Rot * σ * Rot'
-                app_fric[i,j]  = σ′[1,2] / σ′[2,2]
-                app_fric_sum  += app_fric[i,j]
-                # Compute true friction
-                if λ̇.c[i,j] > 1e-10
-                    true_sum      += 1
-                    ph             = phases.c[i,j]
-                    cxcosϕ         = materials.plasticity.C[ph] * materials.plasticity.cosϕ[ph]
-                    ηvp            = materials.plasticity.ηvp[ph]
-                    true_fric[i,j] = tand(asind( 1/Pt[i,j] * (τ.II[i,j] - cxcosϕ - ηvp*λ̇.c[i,j])  ))
-                    true_fric_sum += true_fric[i,j]
-                end
+            σ  = @SMatrix[-Pt[i,j]+τ.xx[i,j] τxyc[i,j] 0.; τxyc[i,j] -Pt[i,j]+τ.yy[i,j] 0.; 0. 0. -Pt[i,j]+(-τ.xx[i,j]-τ.yy[i,j])]
+            v  = eigvecs(σ)
+            σp = eigvals(σ)
+            σ1
+            scale = sqrt(v[1,1]^2 + v[2,1]^2)
+            σ1.x[i,j] = v[1,1]/scale
+            σ1.y[i,j] = v[2,1]/scale
+            σ1.v[i]   = σp[1]
+
+            if phases.c[i,j] == 2
+                # Friction in the gouge
+                # σ2D  = @SMatrix[-Pt[i,j]+τ.xx[i,j] τxyc[i,j]; τxyc[i,j] -Pt[i,j]+τ.yy[i,j]]
+                # σ′   = σ2D #Rot * σ2D * Rot'
+                σ′     = Rot * σ * Rot'
+                fric_gouge[i,j] = σ′[1,2] / σ′[2,2]
+                fric_sum       += fric_gouge[i,j]
+                gouge_sum      += 1
             end
         end
 
@@ -464,22 +416,38 @@ using TimerOutputs, CairoMakie
         probes.PE[it]   = Pt[end-1, ind_mid_y] 
         probes.σxxW[it] = τ.xx[2,     ind_mid_y] - Pt[2,     ind_mid_y] 
         probes.σxxE[it] = τ.xx[end-1, ind_mid_y] - Pt[end-1, ind_mid_y] 
+        # probes.σyyS[it] = τ.yy[ind_mid_x,     2] - Pt[ind_mid_x,     2] 
+        # probes.σyyN[it] = τ.yy[ind_mid_x, e,nd-1] - Pt[ind_mid_x, end-1] 
         probes.σyyS[it] = mean(τ.yy[inx_c,     2] .- Pt[inx_c,     2]) 
         probes.σyyN[it] = mean(τ.yy[inx_c, end-1] .- Pt[inx_c, end-1]) 
+
+
+        ∫σyy = sum(abs.( σyy[ind_mid_x, iny_c]).*Δ.y)
+        ∫σxy = sum(abs.(τxyc[ind_mid_x, iny_c]).*Δ.y)
+
+
+
+        # probes.fric[it] = mean(.-τxyc[inx_c, end-3]./(-Pt[inx_c, end-3] .+ τ.yy[inx_c, end-3])) 
         # σd = probes.σyyS[it] - probes.σxxW[it]
         # σm = -probes.PW[it]
         σd = 2 *  1/2*(mean(τII_gouge) )
         σm = 1 *  1/2*(mean(  P_gouge) )
         τr = σd/2 * sin(2*(π/2 - θgouge))
         τn = σm + σd/2 * cos(2*(π/2 - θgouge))
-        # probes.app_fric[it] =  τr / τn
-        probes.app_fric[it] = app_fric_sum / app_sum 
-        probes.true_fric[it] =  true_fric_sum / true_sum 
+        probes.fric[it] = τr / τn
+        # probes.fric[it] = mean(.-τxyc[inx_c, end-3]./(-Pt[inx_c, end-3] .+ τ.yy[inx_c, end-3])) 
+        # probes.fric[it] = ∫σxy / ∫σyy
 
-        # Stress angles
-        probes.minθ[it]  = minimum(τ.θ[phases.c.==2])
-        probes.meanθ[it] =    mean(τ.θ[phases.c.==2])
-        probes.maxθ[it]  = maximum(τ.θ[phases.c.==2])
+
+        # probes.fric_gouge[it] = mean(abs.(fric_gouge)) #fric_sum / gouge_sum
+        # probes.fric_gouge[it] = fric_gouge[ind_mid_x,ind_mid_y] #fric_sum / gouge_sum
+        σd = 2 *  1/2*(mean(τII_rock_gouge) )
+        σm = 1 *  1/2*(mean(  P_rock_gouge) )
+        τr = σd/2 * sin(2*(π/2 - θgouge))
+        τn = σm + σd/2 * cos(2*(π/2 - θgouge))
+        probes.fric_gouge[it] =  fric_sum / gouge_sum #τr / τn
+
+        @show minimum(Pt)*sc.σ/1e6,  maximum(Pt)*sc.σ/1e6
 
         # Visualise
         function figure()
@@ -487,95 +455,49 @@ using TimerOutputs, CairoMakie
             fig = Figure(size=(1000, 1000)) 
             empty!(fig)
 
-            # Split heatmap of the apparatus
-            ax  = Axis(fig[1:3,1], aspect=DataAspect(), title="Apparent / True friction", xlabel="x", ylabel="y", xlabelsize=ftsz,  ylabelsize=ftsz, titlesize=ftsz)
+            ax  = Axis(fig[1,1], aspect=DataAspect(), title="Plastic Strain rate", xlabel="x", ylabel="y", xlabelsize=ftsz,  ylabelsize=ftsz, titlesize=ftsz)
             eps   = 1e-1
             # field = (τ.xy)[inx_c,iny_c]  .* sc.σ / 1e6
-            # field = app_fric[inx_c,iny_c]
-            # field = (τ.yy .- Pt)[inx_c,iny_c]  .* sc.σ / 1e6
-            # field = log10.((λ̇.c[inx_c,iny_c] .+ eps)/sc.t )
-            field1 = app_fric .+ eps
-            field2 = true_fric .+ eps
-            # field = phases.c[inx_c,iny_c]
-            hm1 = heatmap!(ax, X.c.x[1:ind_mid_x].*sc.L, X.c.y.*sc.L, field1[1:ind_mid_x,:], colormap=:bluesreds, colorrange=(minimum(field1)-eps, maximum(field1)+eps))
-            hm2 = heatmap!(ax, X.c.x[ind_mid_x:end].*sc.L, X.c.y.*sc.L, field2[ind_mid_x:end,:], colormap=:bluesreds, colorrange=(minimum(field2)-eps, maximum(field2)+eps))
-            contour!(ax, X.c.x.*sc.L, X.c.y.*sc.L,  phases.c[inx_c,iny_c], color=:white)
-            Colorbar(fig[4, 1], hm1, label = L"$\phi^\text{app}$", height=30, width = 300, labelsize = 20, ticklabelsize = 20, vertical=false, valign=true, flipaxis = true )
-            Colorbar(fig[4, 2], hm2, label = L"$\phi^\text{true}$", height=30, width = 300, labelsize = 20, ticklabelsize = 20, vertical=false, valign=true, flipaxis = true )
-            Vxc = (0.5*(V.x[1:end-1,2:end-1] + V.x[2:end,2:end-1]))[2:end-1,2:end-1].*sc.L/sc.t
-            Vyc = (0.5*(V.y[2:end-1,1:end-1] + V.y[2:end-1,2:end]))[2:end-1,2:end-1].*sc.L/sc.t
-            step = 10
-            # arrows2d!(ax, X.c.x[1:step:end].*sc.L, X.c.y[1:step:end].*sc.L, Vxc[1:step:end,1:step:end], Vyc[1:step:end,1:step:end], lengthscale=50000.4, color=:white)
-            arrows2d!(ax, X.c.x[1:step:end], X.c.y[1:step:end], cos.(τ.θ)[inx_c,iny_c][1:step:end,1:step:end], sin.(τ.θ)[inx_c,iny_c][1:step:end,1:step:end], lengthscale=0.04, color=:white, tiplength = 0)
-            xlims!(ax, minimum(X.v.x).*sc.L, maximum(X.v.x).*sc.L)
-            lines!(ax, X.c.x[ind_mid_x].*sc.L *  ones(size(X.c.y)), X.c.y.*sc.L, color=:white, linewidth=4)
-
-            # Zoom on the gouge
-            ax  = Axis(fig[2,2], aspect=DataAspect(), title="Plastic Strain rate", xlabel="x", ylabel="y", xlabelsize=ftsz,  ylabelsize=ftsz, titlesize=ftsz)
-            eps   = 1e-1
-            # field = (τ.xy)[inx_c,iny_c]  .* sc.σ / 1e6
-            # field = app_fric[inx_c,iny_c]
+            # field = fric_gouge[inx_c,iny_c]
             # field = (τ.yy .- Pt)[inx_c,iny_c]  .* sc.σ / 1e6
             field = log10.((λ̇.c[inx_c,iny_c] .+ eps)/sc.t )
             # field = phases.c[inx_c,iny_c]
             hm = heatmap!(ax, X.c.x.*sc.L, X.c.y.*sc.L, field, colormap=:bluesreds, colorrange=(minimum(field)-eps, maximum(field)+eps))
             contour!(ax, X.c.x.*sc.L, X.c.y.*sc.L,  phases.c[inx_c,iny_c], color=:white)
+            # xlims!(ax, -0.35, 0.35)
+            # ylims!(ax, 0.5, 1.0)
             # arrows2d!(ax, X.c.x[1:step:end].*sc.L, X.c.y[1:step:end].*sc.L, Vxc[1:step:end,1:step:end], Vyc[1:step:end,1:step:end], lengthscale=50000.4, color=:white)
-            arrows2d!(ax, X.c.x[1:step:end], X.c.y[1:step:end], cos.(τ.θ)[inx_c,iny_c][1:step:end,1:step:end], sin.(τ.θ)[inx_c,iny_c][1:step:end,1:step:end], lengthscale=0.04, color=:white, tiplength = 0)
-            xlims!(ax, -0.35, 0.35)
-            ylims!(ax, 0.5, 1.0)
+            step = 10
+            arrows2d!(ax, X.c.x[1:step:end], X.c.y[1:step:end], σ1.x[inx_c,iny_c][1:step:end,1:step:end], σ1.y[inx_c,iny_c][1:step:end,1:step:end], lengthscale=0.04, color=:white, tiplength = 0)
+            xlims!(ax, minimum(X.v.x).*sc.L, maximum(X.v.x).*sc.L)
 
-            # ax  = Axis(fig[1,2], xlabel="Iterations @ step $(it) ", ylabel="log₁₀ error", xlabelsize=ftsz, ylabelsize=ftsz, titlesize=ftsz)
-            # scatter!(ax, 1:niter, log10.(err.x[1:niter]./err.x[1]) )
-            # scatter!(ax, 1:niter, log10.(err.y[1:niter]./err.y[1]) )
-            # scatter!(ax, 1:niter, log10.(err.p[1:niter]./err.p[1]) )
-            # ylims!(ax, -15, 1)
-            ax  = Axis(fig[3,2], title=L"$$Stress space", xlabel=L"$P$", ylabel=L"$\tau_{II}$", xlabelsize=ftsz, ylabelsize=ftsz, titlesize=ftsz)
-            P_ax       = LinRange(minimum(P_rock), maximum(P_rock), 100)
-            τ_ax_rock  = materials.plasticity.C[1] * materials.plasticity.cosϕ[1] .+ P_ax.*materials.plasticity.sinϕ[1]
-            τ_ax_gouge = materials.plasticity.C[2] * materials.plasticity.cosϕ[2] .+ P_ax.*materials.plasticity.sinϕ[2]
-            lines!(ax, P_ax*sc.σ/1e6, τ_ax_gouge*sc.σ/1e6, color=:black)
-            lines!(ax, P_ax*sc.σ/1e6, τ_ax_rock*sc.σ/1e6, color=:black)
-            scatter!(ax,  P_rock*sc.σ/1e6, ( τII_rock .- λ̇_rock.* materials.plasticity.ηvp[2])*sc.σ/1e6, color=:blue )
-            scatter!(ax, P_gouge*sc.σ/1e6, (τII_gouge .- λ̇_gouge.*materials.plasticity.ηvp[2])*sc.σ/1e6, color= :red )
+            ax  = Axis(fig[0,1:2], xlabel="Displacement", ylabel="Axial stress [MPa]", xlabelsize=ftsz, ylabelsize=ftsz, titlesize=ftsz)
+            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.PW[1:it]*sc.σ./1e6, marker=:diamond, markersize=20 )
+            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.PE[1:it]*sc.σ./1e6, marker=:diamond, markersize=20 )
+            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L,-probes.σxxW[1:it]*sc.σ./1e6, marker=:star5, markersize=20 )
+            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L,-probes.σxxE[1:it]*sc.σ./1e6, marker=:star5, markersize=20 )
+            # scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.σyyN[1:it]*sc.σ./1e6, marker=:circle )
+            # scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.σyyS[1:it]*sc.σ./1e6, marker=:circle )
 
-            # τ_ax_gouge = materials.C[2]*materials.cosϕ[2] .+ P_ax.*materials.sinϕ[2]
-            # lines!(ax, P_ax*sc.σ/1e6, τ_ax_gouge*sc.σ/1e6, color=:red)
-            # scatter!(ax, P_gouge*sc.σ/1e6, τII_gouge*sc.σ/1e6, color=:red )
 
-            ax  = Axis(fig[0,1], xlabel="Displacement", ylabel="Axial stress [MPa]", xlabelsize=ftsz, ylabelsize=ftsz, titlesize=ftsz)
-            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.PW[1:it]*sc.σ./1e6, marker=:diamond ) #, markersize=20
-            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.PE[1:it]*sc.σ./1e6, marker=:diamond ) #, markersize=20
-            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.σxxW[1:it]*sc.σ./1e6, marker=:star5 ) #, markersize=20
-            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.σxxE[1:it]*sc.σ./1e6, marker=:star5 ) #, markersize=20
-            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.σyyN[1:it]*sc.σ./1e6, marker=:circle )
-            scatter!(ax, probes.t[1:it]*ε̇xx*L.y*sc.L, probes.σyyS[1:it]*sc.σ./1e6, marker=:circle )
+            ax1 = Axis(fig[1,2], xlabel="Iterations @ step $(it)", ylabel="log₁₀ error", title="Convergence")
+            scatter!(ax1, 1:iter, log10.(err.x[1:iter]), markersize=6, label="Vx")
+            scatter!(ax1, 1:iter, log10.(err.y[1:iter]), markersize=6, label="Vy")
+            axislegend(ax1, position=:rt)
 
-            # ax  = Axis(fig[0,2], xlabel="time [hrs]", ylabel="τII [MPa]", xlabelsize=ftsz, ylabelsize=ftsz, titlesize=ftsz)
-            # scatter!(ax, probes.t[1:it]*sc.t/3600, probes.τII[1:it]*sc.σ./1e6 )
-            # scatter!(ax, probes.t[1:it]*sc.t/3600, probes.τIIW[1:it]*sc.σ./1e6, marker=:star5, markersize=20 )
-            # scatter!(ax, probes.t[1:it]*sc.t/3600, probes.τIIE[1:it]*sc.σ./1e6, marker=:star5, markersize=20 )
-            # scatter!(ax, probes.t[1:it]*sc.t/3600, probes.τIIS[1:it]*sc.σ./1e6, marker=:diamond, markersize=20 )
-            # scatter!(ax, probes.t[1:it]*sc.t/3600, probes.τIIN[1:it]*sc.σ./1e6, marker=:diamond, markersize=20 )
-
-            ax  = Axis(fig[0,2], xlabel="time [hrs]", ylabel="-τxy/σyy", xlabelsize=ftsz, ylabelsize=ftsz, titlesize=ftsz)
-            lines!(ax, probes.t[1:it]*sc.t/3600, ones(it)*tand(materials.plasticity.ϕ[2]), linestyle=:dash, color=:gray )
-            scatter!(ax, probes.t[1:it]*sc.t/3600, probes.app_fric[1:it] )
-            scatter!(ax, probes.t[1:it]*sc.t/3600, probes.true_fric[1:it], marker=:star5) #, markersize=20  
-            
-            ax  = Axis(fig[1,2], xlabel="time [hrs]", ylabel="σ1 angle gouge", xlabelsize=ftsz, ylabelsize=ftsz, titlesize=ftsz)
-            scatter!(ax, probes.t[1:it]*sc.t/3600, probes.minθ[1:it]*180/π )
-            scatter!(ax, probes.t[1:it]*sc.t/3600, probes.meanθ[1:it]*180/π )
-            scatter!(ax, probes.t[1:it]*sc.t/3600, probes.maxθ[1:it]*180/π )
-            
             display(fig)
 
+            @show extrema(Pt0*sc.σ./1e6)
+            @show mean(Pt[inx_c,iny_c]*sc.σ./1e6)
+            # error()
         end
         with_theme(figure, theme_latexfonts())
     end
+
     display(to)
+    
 end
 
 let
-    main((x = 200, y = 300), 60)
+    main((x = 80, y = 80), 60)
 end

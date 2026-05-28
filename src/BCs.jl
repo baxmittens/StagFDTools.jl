@@ -17,25 +17,12 @@ function SetBCVx1(Vx, typex, bcx, Δ)
     # E/W
     for jj in axes(typex, 2)
         if typex[1,jj] === :Neumann_normal 
-            MVx[1,jj] = muladd(2, Δ.x*bcx[1,jj], Vx[2,jj])
+            MVx[1,jj] = muladd(2, Δ.x*bcx[2,jj], Vx[3,jj])
         end
         if typex[end,jj] === :Neumann_normal 
-            MVx[end,jj] = muladd(2,-Δ.x*bcx[end,jj], Vx[end-1,jj])
+            MVx[end,jj] = muladd(2,-Δ.x*bcx[end-1,jj], Vx[end-2,jj])
         end
     end
-
-    # # E/W
-    # for jj in axes(typex, 2)
-    #     if typex[1,jj] === :out 
-    #         @show jj, bcx[1,jj], Vx[3,jj]
-    #         MVx[1,jj] = 100
-    #         # MVx[1,jj] = muladd(1, -2*Δ.x*bcx[1,jj], Vx[3,jj])
-    #     end
-    #     if typex[end,jj] === :out 
-    #         MVx[end,jj] = muladd(1, 2*Δ.x*bcx[end,jj], Vx[end-2,jj])
-    #     end
-    # end
-    
     return SMatrix(MVx)
 end
 
@@ -58,10 +45,10 @@ function SetBCVy1(Vy, typey, bcy, Δ)
     # N/S
     for ii in axes(typey, 1)
         if typey[ii,1] === :Neumann_normal
-            MVy[ii,1] = muladd(2, Δ.y*bcy[ii,1], Vy[ii,2])
+            MVy[ii,1] = muladd(2, Δ.y*bcy[ii,2], Vy[ii,3])
         end
         if typey[ii,end] === :Neumann_normal
-            MVy[ii,end] = muladd(2,-Δ.y*bcy[ii,end], Vy[ii,end-1])
+            MVy[ii,end] = muladd(2,-Δ.y*bcy[ii,end-1], Vy[ii,end-2])
         end
     end
     return SMatrix(MVy)

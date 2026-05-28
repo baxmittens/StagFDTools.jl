@@ -225,7 +225,7 @@ end
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
     ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...)  )
     τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
-    τ       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
+    τ       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...), θ = zeros(size_c...) )
     ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
     G       = (c  = zeros(size_c...), v  = zeros(size_v...))
     β       = (c  = zeros(size_c...), v  = zeros(size_v...))

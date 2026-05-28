@@ -108,27 +108,27 @@ using TimerOutputs, CairoMakie
     Δ = (x=L.x / nc.x, y=L.y / nc.y, t=Δt0)
 
     # Allocations
-    R = (x=zeros(size_x...), y=zeros(size_y...), p=zeros(size_c...))
-    V = (x=zeros(size_x...), y=zeros(size_y...))
+    R  = (x=zeros(size_x...), y=zeros(size_y...), p=zeros(size_c...))
+    V  = (x=zeros(size_x...), y=zeros(size_y...))
     Vi = (x=zeros(size_x...), y=zeros(size_y...))
-    η = (c=ones(size_c...), v=ones(size_v...))
-    ξ = (c=ones(size_c...), v=ones(size_v...))
-    G = (c=zeros(size_c...), v=zeros(size_v...))
-    β = (c=zeros(size_c...), v=zeros(size_v...))
-    ρ = (c=zeros(size_c...), v=zeros(size_v...))
-    λ̇ = (c=zeros(size_c...), v=zeros(size_v...))
-    ε̇ = (xx=zeros(size_c...), yy=zeros(size_c...), xy=zeros(size_v...), II=zeros(size_c...))
+    η  = (c=ones(size_c...), v=ones(size_v...))
+    ξ  = (c=ones(size_c...), v=ones(size_v...))
+    G  = (c=zeros(size_c...), v=zeros(size_v...))
+    β  = (c=zeros(size_c...), v=zeros(size_v...))
+    ρ  = (c=zeros(size_c...), v=zeros(size_v...))
+    λ̇  = (c=zeros(size_c...), v=zeros(size_v...))
+    ε̇  = (xx=zeros(size_c...), yy=zeros(size_c...), xy=zeros(size_v...), II=zeros(size_c...))
     τ0 = (xx=zeros(size_c...), yy=zeros(size_c...), xy=zeros(size_v...))
-    τ = (xx=zeros(size_c...), yy=zeros(size_c...), xy=zeros(size_v...), II=zeros(size_c...))
+    τ  = (xx=zeros(size_c...), yy=zeros(size_c...), xy=zeros(size_v...), II=zeros(size_c...))
 
-    Pt = zeros(size_c...)
+    Pt  = zeros(size_c...)
     Pti = zeros(size_c...)
     Pt0 = zeros(size_c...)
     ΔPt = (c=zeros(size_c...), Vx=zeros(size_x...), Vy=zeros(size_y...))
 
     Dc = [@MMatrix(zeros(4, 4)) for _ in axes(ε̇.xx, 1), _ in axes(ε̇.xx, 2)]
     Dv = [@MMatrix(zeros(4, 4)) for _ in axes(ε̇.xy, 1), _ in axes(ε̇.xy, 2)]
-    𝐷 = (c=Dc, v=Dv)
+    𝐷  = (c=Dc, v=Dv)
     D_ctl_c = [@MMatrix(zeros(4, 4)) for _ in axes(ε̇.xx, 1), _ in axes(ε̇.xx, 2)]
     D_ctl_v = [@MMatrix(zeros(4, 4)) for _ in axes(ε̇.xy, 1), _ in axes(ε̇.xy, 2)]
     𝐷_ctl = (c=D_ctl_c, v=D_ctl_v)

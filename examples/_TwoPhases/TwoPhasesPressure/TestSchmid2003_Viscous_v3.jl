@@ -48,9 +48,11 @@ using DifferentiationInterface
         #        mat    inc  
         Φ0    = [1e-16   1e-16],
         n     = [1.0    1.0 ],
+        m     = [0.0    0.0 ],
         n_CK  = [1.0    1.0 ],
         ηs0   = [params.mm  params.mc ]./sc.σ/sc.t, 
-        ηΦ    = [1e30   1e30]./sc.σ/sc.t,
+        ηΦ0   = [1e30   1e30]./sc.σ/sc.t,
+        η0    = [1e30   1e30]./sc.σ/sc.t,
         G     = [1e30   1e30] .* kill_elasticity ./sc.σ, 
         ρs    = [2900   2900]/(sc.σ*sc.t^2/sc.L^2),
         ρf    = [2600   2600]/(sc.σ*sc.t^2/sc.L^2),
@@ -142,7 +144,7 @@ using DifferentiationInterface
     Φ   = (c=zeros(size_c...), v=zeros(size_v...) )
     Φ0  = (c=zeros(size_c...), v=zeros(size_v...) )
     εp  = zeros(size_c...)
-    ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...) )
+    ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...), θ = zeros(size_c...) )
     τ0      = (xx = ones(size_c...), yy = ones(size_c...), xy = zeros(size_v...) )
     τ       = (xx = ones(size_c...), yy = ones(size_c...), xy = zeros(size_v...), II = zeros(size_c...), f = zeros(size_c...) )
     Dc      =  [@MMatrix(zeros(5,5)) for _ in axes(ε̇.xx,1), _ in axes(ε̇.xx,2)]
@@ -591,5 +593,5 @@ function Run(n)
 
 end
 
-Run(200)
+Run(100)
 # 0.27, 0.1, 0.
