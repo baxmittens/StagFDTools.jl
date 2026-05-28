@@ -490,22 +490,24 @@ function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η , V, P, ΔP, P
         η.v[i,j]  = η_local
     end
 
-    # # Cheap copy edges
-    # for j=2:size(ε̇.xy,2)-1 
-    #     i = 2
-    #     @views 𝐷_ctl.v[i,j] .= 𝐷_ctl.v[3,j]
-    #     @views 𝐷.v[i,j]     .= 𝐷.v[3,j]
-    #     i = size(ε̇.xy,1)-1
-    #     @views 𝐷_ctl.v[i,j] .= 𝐷_ctl.v[end-2,j]
-    #     @views 𝐷.v[i,j]     .= 𝐷.v[end-2,j]
-    # end
+    # !!!!!! Cheap copy edges
+    # This crap is necessary becaus eof the vertex CTL loop is such
+    # for j=3:size(ε̇.xy,2)-2, i=3:size(ε̇.xy,1)-2
+    for j=2:size(ε̇.xy,2)-1 
+        i = 2
+        @views 𝐷_ctl.v[i,j] .= 𝐷_ctl.v[3,j]
+        @views 𝐷.v[i,j]     .= 𝐷.v[3,j]
+        i = size(ε̇.xy,1)-1
+        @views 𝐷_ctl.v[i,j] .= 𝐷_ctl.v[end-2,j]
+        @views 𝐷.v[i,j]     .= 𝐷.v[end-2,j]
+    end
 
-    # for i=2:size(ε̇.xy,1)-1 
-    #     j = 2
-    #     @views 𝐷_ctl.v[i,j] .= 𝐷_ctl.v[i,3]
-    #     @views 𝐷.v[i,j]     .= 𝐷.v[i,3]
-    #     j = size(ε̇.xy,2)-1
-    #     @views 𝐷_ctl.v[i,j] .= 𝐷_ctl.v[i,end-2]
-    #     @views 𝐷.v[i,j]     .= 𝐷.v[i,end-2]
-    # end
+    for i=2:size(ε̇.xy,1)-1 
+        j = 2
+        @views 𝐷_ctl.v[i,j] .= 𝐷_ctl.v[i,3]
+        @views 𝐷.v[i,j]     .= 𝐷.v[i,3]
+        j = size(ε̇.xy,2)-1
+        @views 𝐷_ctl.v[i,j] .= 𝐷_ctl.v[i,end-2]
+        @views 𝐷.v[i,j]     .= 𝐷.v[i,end-2]
+    end
 end

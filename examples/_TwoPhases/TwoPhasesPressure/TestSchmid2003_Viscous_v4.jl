@@ -224,12 +224,6 @@ import Statistics:mean
     BC.Vy[ end-1, iny_Vy] .= (type.Vy[ end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*X.v.x[end] .+ D_BC[2,2]*X.v.y)
     BC.Pf[     :,     1 ] .= Pf_bot
 
-    # Set material geometry 
-    phases = (c= ones(Int64, size_c...), v= ones(Int64, size_v...), x =ones(Int64, size_x...), y=ones(Int64, size_y...) )  # phase on velocity points
-    rad = params.rc + 1e-13
-    phases.c[(X.c_e.x.^2 .+ (X.c_e.y').^2) .<= rad^2] .= 2
-    phases.v[(X.v_e.x.^2 .+ (X.v_e.y').^2) .<= rad^2] .= 2
-
     # Analytics
     V_ana = (
         x = zero(BC.Vx),
@@ -246,19 +240,20 @@ import Statistics:mean
     for i=1:size(BC.Pf,1), j=1:size(BC.Pf,2)
         sol = Stokes2D_Schmid2003( [X.c_e.x[i], X.c_e.y[j]]; params )
         Pt_ana[i,j] = sol.p
+        P.t[i,j]    = sol.p
     end
 
     # Get Vx analytics 
-    for i=1:size(BC.Vx,1), j=2:size(BC.Vx,2)-1
-        sol = Stokes2D_Schmid2003( [X.v_e.x[i], X.c_e.y[j-1]]; params )
+    for i=1:size(BC.Vx,1), j=1:size(BC.Vx,2)
+        sol = Stokes2D_Schmid2003( [X.vx_e.x[i], X.vx_e.y[j]]; params )
         BC.Vx[i,j]   =  sol.V[1]
         V.x[i,j]     = sol.V[1]
         V_ana.x[i,j] = sol.V[1]
     end
 
     # Get Vy analytics 
-    for i=2:size(BC.Vy,1)-1, j=1:size(BC.Vy,2)
-        sol = Stokes2D_Schmid2003( [X.c_e.x[i-1], X.v_e.y[j]]; params )
+    for i=1:size(BC.Vy,1), j=1:size(BC.Vy,2)
+        sol = Stokes2D_Schmid2003( [X.vy_e.x[i], X.vy_e.y[j]]; params )
         BC.Vy[i,j]   = sol.V[2] 
         V.y[i,j]     = sol.V[2] 
         V_ana.y[i,j] = sol.V[2]
@@ -412,12 +407,12 @@ import Statistics:mean
         Pt_viz[P.t.<minimum(Pt_ana)] .= minimum(Pt_ana)
       
         Vx_viz = copy(V.x)
-        Vx_viz[V.x.>maximum(V_ana.x)] .= maximum(V_ana.x)
-        Vx_viz[V.x.<minimum(V_ana.x)] .= minimum(V_ana.x)
+        # Vx_viz[V.x.>maximum(V_ana.x)] .= maximum(V_ana.x)
+        # Vx_viz[V.x.<minimum(V_ana.x)] .= minimum(V_ana.x)
 
         Vy_viz = copy(V.y)
-        Vy_viz[V.y.>maximum(V_ana.y)] .= maximum(V_ana.y)
-        Vy_viz[V.y.<minimum(V_ana.y)] .= minimum(V_ana.y)
+        # Vy_viz[V.y.>maximum(V_ana.y)] .= maximum(V_ana.y)
+        # Vy_viz[V.y.<minimum(V_ana.y)] .= minimum(V_ana.y)
         #--------------------------------------------#
         
         # Visualise

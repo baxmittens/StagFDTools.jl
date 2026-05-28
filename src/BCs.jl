@@ -18,26 +18,11 @@ function SetBCVx1(Vx, typex, bcx, Δ)
     for jj in axes(typex, 2)
         if typex[1,jj] === :Neumann_normal 
             MVx[1,jj] = muladd(2, Δ.x*bcx[2,jj], Vx[3,jj])
-            # @show MVx[1,jj]
         end
         if typex[end,jj] === :Neumann_normal 
             MVx[end,jj] = muladd(2,-Δ.x*bcx[end-1,jj], Vx[end-2,jj])
-            #    @show bcx[end-1,jj]
         end
     end
-
-    # # E/W
-    # for jj in axes(typex, 2)
-    #     if typex[1,jj] === :out 
-    #         @show jj, bcx[1,jj], Vx[3,jj]
-    #         MVx[1,jj] = 100
-    #         # MVx[1,jj] = muladd(1, -2*Δ.x*bcx[1,jj], Vx[3,jj])
-    #     end
-    #     if typex[end,jj] === :out 
-    #         MVx[end,jj] = muladd(1, 2*Δ.x*bcx[end,jj], Vx[end-2,jj])
-    #     end
-    # end
-
     return SMatrix(MVx)
 end
 
