@@ -334,8 +334,7 @@ function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η , V, P, ΔP, P
 
         # Tangent operator used for Newton Linearisation
         τ_vec, jac = ad_value_and_jacobian(StressVector_P2!, ε̇vec, Dkk[1], divqD, P0.t[i,j], P0.f[i,j], Φ0.c[i,j], τ0_loc, materials, phases.c[i,j], Δ)
-        η_local, λ̇_local, τII_local, Φ_local, f_local = StagFDTools.TwoPhases.LocalRheology_P(ε̇vec, Dkk[1], divqD, P0.t[i,j], P0.f[i,j], Φ0.c[i,j], τ0_loc, materials, phases.c[i,j], Δ)
-
+        η_local, Pt1, Pf1, λ̇_local, τII_local, Φ_local, f_local = LocalRheology_P(ε̇vec, Dkk[1], divqD, P0.t[i,j], P0.f[i,j], Φ0.c[i,j], τ0_loc, materials, phases.c[i,j], Δ)
         @views 𝐷_ctl.c[i,j] .= jac
 
         #################################
@@ -473,7 +472,7 @@ function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η , V, P, ΔP, P
 
         # Tangent operator used for Newton Linearisation
         τ_vec, jac = ad_value_and_jacobian(StressVector_P2!, ε̇vec, D̄kk[1], divqD̄, P̄t0[1], P̄f0[1], ϕ̄0[1], τ0_loc, materials, phases.v[i,j], Δ)
-        η_local, λ̇_local, τII_local, Φ_local, f_local = StagFDTools.TwoPhases.LocalRheology_P(ε̇vec, D̄kk[1], divqD̄, P̄t0[1], P̄f0[1], ϕ̄0[1], τ0_loc, materials, phases.v[i,j], Δ)
+        η_local, Pt1, Pf1, λ̇_local, τII_local, Φ_local, f_local = LocalRheology_P(ε̇vec, D̄kk[1], divqD̄, P̄t0[1], P̄f0[1], ϕ̄0[1], τ0_loc, materials, phases.v[i,j], Δ)
         @views 𝐷_ctl.v[i,j] .= jac
 
         ##################################

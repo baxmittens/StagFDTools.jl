@@ -1,5 +1,6 @@
 using StagFDTools, StagFDTools.TwoPhases, ExtendableSparse, StaticArrays, CairoMakie, LinearAlgebra, SparseArrays, Printf, JLD2
 import Statistics:mean
+
 let 
 
     Ωl = 0.15      # ---> δ/r
@@ -389,8 +390,7 @@ end
         Vxfc = 0.5*(Vxf[1:end-1,2:end-1] .+ Vxf[2:end,2:end-1])
         Vyfc = 0.5*(Vyf[2:end-1,1:end-1] .+ Vyf[2:end-1,2:end])
         Vf   = (x=Vxfc, y=Vyfc )
-        Vf_mag   = sqrt.( Vxfc.^2 .+ Vyfc.^2)
-
+        Vf_mag  = sqrt.( Vxfc.^2 .+ Vyfc.^2)
         dΦdt = (Φ.c .- Φ0.c) / Δ.t
         
         @show τvis = norm(τ.II[inx_c,iny_c]) / sqrt(nc.x*nc.y)
@@ -398,11 +398,8 @@ end
         @show Pfvis = norm(P.f[inx_c,iny_c]) / sqrt(nc.x*nc.y)
         @show Peffvis = norm(P.t[inx_c,iny_c] .- P.f[inx_c,iny_c]) / sqrt(nc.x*nc.y)
 
-        # P.t .-= mean(P.t[inx_c,iny_c]) 
-        # P.f .-= mean(P.f[inx_c,iny_c])
-
-        # cmap = (CairoMakie.Reverse(:matter), 1)
-        cmap = :jet1
+        cmap = (CairoMakie.Reverse(:matter), 1)
+        # cmap = :jet1
         st  = 15
         ind = st:st:size(xc,1)-st
 
@@ -418,7 +415,7 @@ end
         # arrowsize = V.arrow, lengthscale = V.scale)
 
         ax2 = Axis(fig[3,3], xlabelsize=20, ylabelsize=20, aspect=DataAspect()) #, title=L"$V^\text{f} \times 1000$"
-        hmτ = heatmap!(ax2, xc, yc, τ.II[inx_c,iny_c], colormap=cmap, colorrange=(0,3)) 
+        hmτ = heatmap!(ax2, xc, yc, τ.II[inx_c,iny_c], colormap=cmap) 
         # arrows2d!(ax2, xc[ind], yc[ind], σ1.x[ind,ind], σ1.y[ind,ind], lengthscale = 7e-2, color = :white, tipwidth = 0)
 
         ax1 = Axis(fig[2,1],  xlabel=L"$x$ [-]",  ylabel=L"$y$ [-]", xlabelsize=20, ylabelsize=20, aspect=DataAspect()) #, title=L"$P^\text{t}$"
@@ -431,7 +428,7 @@ end
         ax3 = Axis(fig[2,3],  xlabel=L"$x$ [-]", xlabelsize=20, ylabelsize=20, aspect=DataAspect()) # , title=L"$\dot{\phi}$"
         hm3=heatmap!(ax3, xc, yc, dΦdt[inx_c,iny_c]*100, colormap=cmap, colorrange=(-10.e-1, 10.e-1)) 
 
-        # contour!( ax3, xc, yc, Pe[inx_c,iny_c], levels=[0.1], color=:white)
+        # # contour!( ax3, xc, yc, Pe[inx_c,iny_c], levels=[0.1], color=:white)
         
         Colorbar(fig[4,   1], hmVs, label = L"D) $|V^\text{s}|$ [-]", height=10, width = 150, labelsize = 16, ticklabelsize = 12, vertical=false, valign=true, flipaxis = false )
         Colorbar(fig[4,   2], hmVf, label = L"E) $|Q^\text{f}| \times 1000$ [-]", height=10, width = 150, labelsize = 16, ticklabelsize = 12, vertical=false, valign=true, flipaxis = false )
@@ -460,7 +457,7 @@ end
         @show norm(P.t[inx_c,iny_c]) / sqrt(nc.x*nc.y)
         @show norm(P.f[inx_c,iny_c]) / sqrt(nc.x*nc.y)
 
-        save("./examples/_TwoPhases/TwoPhasesPressure/PoroviscousReference_200x200_omega$(Ωl).jld2", "Ωl", Ωl, "Ωη", Ωη,"x", (c=xc, v=xv), "y", (c=yc, v=yv), "P", P, "dΦdt", dΦdt, "Φ", Φ, "τ", τ, "Vs", (x=Vxsc, y=Vysc), "Vf", (x=Vxfc, y=Vyfc), "τvis", τvis, "Ptvis", Ptvis, "Pfvis", Pfvis, "Peffvis", Peffvis)
+        # save("./examples/_TwoPhases/TwoPhasesPressure/PoroviscousReference_200x200_omega$(Ωl).jld2", "Ωl", Ωl, "Ωη", Ωη,"x", (c=xc, v=xv), "y", (c=yc, v=yv), "P", P, "dΦdt", dΦdt, "Φ", Φ, "τ", τ, "Vs", (x=Vxsc, y=Vysc), "Vf", (x=Vxfc, y=Vyfc), "τvis", τvis, "Ptvis", Ptvis, "Pfvis", Pfvis, "Peffvis", Peffvis)
 
         # save("./examples/_TwoPhases/TwoPhasesPressure/PoroviscousReference.jld2", "Ωl", Ωl, "Ωη", Ωη,"x", (c=xc, v=xv), "y", (c=yc, v=yv), "P", P, "dΦdt", dΦdt, "Φ", Φ, "τ", τ, "Vs", (x=Vxsc, y=Vysc), "Vf", (x=Vxfc, y=Vyfc), "τvis", τvis, "Ptvis", Ptvis, "Pfvis", Pfvis, "Peffvis", Peffvis)
         # save("./examples/_TwoPhases/TwoPhasesPressure/PoroviscousReference_endmember1.jld2", "Ωl", Ωl, "Ωη", Ωη,"x", (c=xc, v=xv), "y", (c=yc, v=yv), "P", P, "dΦdt", dΦdt, "Φ", Φ, "τ", τ, "Vs", (x=Vxsc, y=Vysc), "Vf", (x=Vxfc, y=Vyfc))
