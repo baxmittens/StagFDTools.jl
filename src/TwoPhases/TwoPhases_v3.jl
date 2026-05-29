@@ -558,28 +558,28 @@ function AssembleMomentum2D_x!(K, V, P, ΔP, old, 𝐷, rheo, materials, num, pa
             ∂R∂Pf = ad_gradient(Pf_loc -> SMomentum_x_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPt_loc, τ0_loc, G_loc, D, materials, type_loc, bcv_loc, Δ), Pf_loc)
             
             # Vx --- Vx
-            Local = num.Vx[i-1:i+1,j-1:j+1] .* pattern[1][1]
+            Local = SMatrix{3, 3}(num.Vx[ii, jj] for ii in i-1:i+1, jj in j-1:j+1).* pattern[1][1]
             for jj in axes(Local,2), ii in axes(Local,1)
                 if (Local[ii,jj]>0) && num.Vx[i,j]>0
                     K[1][1][num.Vx[i,j], Local[ii,jj]] = ∂R∂Vx[ii,jj] 
                 end
             end
             # Vx --- Vy
-            Local = num.Vy[i-1:i+2,j-2:j+1] .* pattern[1][2]
+            Local = SMatrix{4, 4}(num.Vy[ii, jj] for ii in i-1:i+2, jj in j-2:j+1) .* pattern[1][2]
             for jj in axes(Local,2), ii in axes(Local,1)
                 if (Local[ii,jj]>0) && num.Vx[i,j]>0
                     K[1][2][num.Vx[i,j], Local[ii,jj]] = ∂R∂Vy[ii,jj]  
                 end
             end
             # Vx --- Pt
-            Local = num.Pt[i-1:i,j-2:j] .* pattern[1][3]
+            Local = SMatrix{2, 3}(num.Pt[ii, jj] for ii in i-1:i, jj in j-2:j) .* pattern[1][3]
             for jj in axes(Local,2), ii in axes(Local,1)
                 if (Local[ii,jj]>0) && num.Vx[i,j]>0
                     K[1][3][num.Vx[i,j], Local[ii,jj]] = ∂R∂Pt[ii,jj]  
                 end
             end 
             # Vx --- Pf
-            Local = num.Pf[i-1:i,j-2:j] .* pattern[1][4]
+            Local = SMatrix{2, 3}(num.Pf[ii, jj] for ii in i-1:i, jj in j-2:j) .* pattern[1][4]
             for jj in axes(Local,2), ii in axes(Local,1)
                 if (Local[ii,jj]>0) && num.Vx[i,j]>0
                     K[1][4][num.Vx[i,j], Local[ii,jj]] = ∂R∂Pf[ii,jj]  
