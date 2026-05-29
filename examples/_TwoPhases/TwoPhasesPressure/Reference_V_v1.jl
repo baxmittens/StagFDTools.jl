@@ -57,43 +57,32 @@ end
     D_BC = @SMatrix( [ε̇ 0; 0 -ε̇] )
    
     # Material parameters
-    materials = ( 
-        g     = [0. 0.],
+    nphases = 2
+    materials = initialize_materials_TwoPhases(nphases,
         oneway       = false,
         compressible = true,
-        plasticity   = :off,
-        linearizeϕ   = false, 
+        linearizeΦ   = false, 
         single_phase = false,
         conservative = true,
-        n     = [1.0  1.0],
-        m     = [0.0  0.0],
-        n_CK  = [n_CK n_CK],
-        ηs0   = [ηsi  ηs_inc], 
-        ηΦ0   = [ηbi  ηbi],
-        G     = [1e30 1e30], 
-        ρs    = [1.0  1.0 ],
-        ρf    = [1.0  1.0 ],
-        Kd    = [1e30 1e30],
-        Ks    = [1e30 1e30],
-        KΦ    = [1e30 1e30],
-        Kf    = [1e30 1e30],
-        k_ηf0 = [k_ηΦ/Φi^n_CK k_ηΦ/Φi^n_CK],
-        ψ     = [10.    10.  ],
-        ϕ     = [35.    35.  ],
-        C     = [1e70    1e70],
-        ηvp   = [0.0    0.0  ],
-        cosϕ  = [0.0    0.0  ],
-        sinϕ  = [0.0    0.0  ],
-        sinψ  = [0.0    0.0  ],
+        plasticity   = DruckerPrager,
     )
+    materials.η0             .= [ηsi,  ηs_inc] 
+    materials.n_CK           .= [n_CK, n_CK  ] 
+    materials.ξ0             .= [ηbi,  ηbi]
+    materials.k_ηf0          .= [k_ηΦ/Φi^n_CK, k_ηΦ/Φi^n_CK]
+    materials.plasticity.C   .= [1e50,  1e50]
+    materials.plasticity.ϕ   .= [30. ,  30. ]
+    materials.plasticity.ηvp .= [8e-3,  8e-3]
+    materials.plasticity.ψ   .= [0.0 ,  0.0 ]
+    preprocess!(materials)
 
     k_ηf0 = materials.k_ηf0[1]
-    lc = sqrt((k_ηf0) * (materials.ηΦ0[1] + 4/3*materials.ηs0[1])) 
+    lc = sqrt((k_ηf0) * (materials.ξ0[1] + 4/3*materials.η0[1])) 
 
-    # For plasticity
-    @. materials.cosϕ  = cosd(materials.ϕ)
-    @. materials.sinϕ  = sind(materials.ϕ)
-    @. materials.sinψ  = sind(materials.ψ)
+    # # For plasticity
+    # @. materials.cosϕ  = cosd(materials.ϕ)
+    # @. materials.sinϕ  = sind(materials.ϕ)
+    # @. materials.sinψ  = sind(materials.ψ)
     
     # Resolution
     inx_Vx, iny_Vx, inx_Vy, iny_Vy, inx_c, iny_c, inx_v, iny_v, size_x, size_y, size_c, size_v = Ranges(nc)
@@ -482,7 +471,8 @@ function Run()
 
     nc = (x=300, y=300)
 
-    nc = (x=200, y=200)
+    # nc = (x=200, y=200)
+    nc = (x=50, y=50)
 
     # Mode 0   
     # Ωl = 10^(-1.7) # ---> δ/r

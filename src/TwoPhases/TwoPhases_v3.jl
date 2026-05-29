@@ -143,12 +143,12 @@ function SMomentum_y_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔP, Pt0, Pf0, Φ0,
     Pfc0 = SVector{2}( @. Pf0[2,:] )
 
     # Porosity
-    ηΦ      = SVector{2}( materials.ηΦ0[phases.c])
+    ηΦ      = SVector{2}( materials.ξ0[phases.c])
     KΦ      = SVector{2}( materials.KΦ[phases.c])
     m       = SVector{2}( materials.m[phases.c])
 
     # THIS IF STATEMENT DOES NOT COMPILE WITH ENZYME
-    # if materials.linearizeϕ == true
+    # if materials.linearizeΦ == true
     #     Φ         = @. Φ0 
     # else 
         Φ         = SVector{2}( Porosity(Φ0[ii], Ptc[ii], Pfc[ii], Ptc0[ii], Pfc0[ii], KΦ[ii], ηΦ[ii], m[ii], 0., 0., Δ.t)[1] for ii in eachindex(Φ0))
@@ -185,7 +185,7 @@ function Continuity(Vx, Vy, Pt_loc, Pf_loc, old, phase, materials, type, bcv, Δ
     invΔx   = 1 / Δ.x
     invΔy   = 1 / Δ.y
     Δt      = Δ.t
-    ηΦ      = materials.ηΦ0[phase]
+    ηΦ      = materials.ξ0[phase]
     m       = materials.m[phase]
     KΦ      = materials.KΦ[phase]
     Ks      = materials.Ks[phase]
@@ -200,7 +200,7 @@ function Continuity(Vx, Vy, Pt_loc, Pf_loc, old, phase, materials, type, bcv, Δ
     dPfdt   = SMatrix{3, 3}( @. (Pf - Pf0) / Δt )
     
     # !!!!!!!!!!!!!!!!!!!!!!!!!!
-    if materials.linearizeϕ ||  materials.single_phase
+    if materials.linearizeΦ ||  materials.single_phase
         Φ       = SMatrix{3, 3}( Φ0 )
         dΦdt    = SMatrix{3, 3}( zeros(3,3) )
     else
@@ -251,7 +251,7 @@ function FluidContinuity(Vx, Vy, Pt_loc, Pf_loc, ΔPf_loc, old, phase, materials
     invΔx   = 1 / Δ.x
     invΔy   = 1 / Δ.y
     Δt      = Δ.t
-    ηΦ      = materials.ηΦ0[phase]
+    ηΦ      = materials.ξ0[phase]
     m       = materials.m[phase]
     KΦ      = materials.KΦ[phase] 
     Kf      = materials.Kf[phase]
@@ -266,7 +266,7 @@ function FluidContinuity(Vx, Vy, Pt_loc, Pf_loc, ΔPf_loc, old, phase, materials
 
     dPtdt   = SMatrix{3,3}( (Pt .- Pt0) / Δt )
     dPfdt   = SMatrix{3,3}( (Pf .- Pf0) / Δt )
-    if materials.linearizeϕ ||  materials.single_phase
+    if materials.linearizeΦ ||  materials.single_phase
         Φ       = SMatrix{3, 3}( Φ0 )
         dΦdt    = SMatrix{3, 3}( zeros(3,3) )
     else
@@ -837,7 +837,7 @@ function UpdatePorosity2D!(R, V, P, P0, Φ, Φ0, phases, materials, number, type
     for j in 1+shift.y:nc.y+shift.y, i in 1+shift.x:nc.x+shift.x
         if type.Pf[i,j] !== :constant 
             KΦ        = materials.KΦ[phases.c[i,j]]
-            ηΦ        = materials.ηΦ0[phases.c[i,j]]
+            ηΦ        = materials.ξ0[phases.c[i,j]]
             dPtdt     = (P.t[i,j] - P0.t[i,j]) / Δ.t
             dPfdt     = (P.f[i,j] - P0.f[i,j]) / Δ.t
             dΦdt      = (dPfdt - dPtdt)/KΦ + (P.f[i,j] - P.t[i,j])/ηΦ
@@ -853,7 +853,7 @@ function ResidualPorosity2D!(R, V, P, P0, Φ, Φ0, phases, materials, number, ty
     for j in 1+shift.y:nc.y+shift.y, i in 1+shift.x:nc.x+shift.x
         if type.Pf[i,j] !== :constant 
             KΦ        = materials.KΦ[phases.c[i,j]]
-            ηΦ        = materials.ηΦ0[phases.c[i,j]]
+            ηΦ        = materials.ξ0[phases.c[i,j]]
             dPtdt     = (P.t[i,j] - P0.t[i,j]) / Δ.t
             dPfdt     = (P.f[i,j] - P0.f[i,j]) / Δ.t
             dΦdt      = (dPfdt - dPtdt)/KΦ + (P.f[i,j] - P.t[i,j])/ηΦ
@@ -1312,7 +1312,7 @@ end
 #     invΔx   = 1 / Δ.x
 #     invΔy   = 1 / Δ.y
 #     Δt      = Δ.t
-#     ηΦ      = materials.ηΦ0[phase]
+#     ηΦ      = materials.ξ0[phase]
 #     m       = materials.m[phase]
 #     KΦ      = materials.KΦ[phase]
 
@@ -1344,7 +1344,7 @@ end
 #     invΔx   = 1 / Δ.x
 #     invΔy   = 1 / Δ.y
 #     Δt      = Δ.t
-#     ηΦ      = materials.ηΦ0[phase]
+#     ηΦ      = materials.ξ0[phase]
 #     m       = materials.m[phase]
 #     KΦ      = materials.KΦ[phase] 
 #     n       = materials.n_CK[phase] # Carman-Kozeny

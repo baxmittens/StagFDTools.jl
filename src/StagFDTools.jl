@@ -28,9 +28,9 @@ include("BCs.jl")
 export SetBCPf1, SetBCPt1, SetBCVx1, SetBCVy1
 
 include("materials.jl")
-export Materials, initialize_materials, preprocess!, preprocess
+export Materials, Materials_TwoPhases, preprocess!, preprocess
 export AbstractPlasticity, VonMises, DruckerPrager, DruckerPrager1, DruckerHyperbolic, DruckerAniso, Golchin2021, Kiss2023, Tensile, NoPlasticity
-export initialize_materials
+export initialize_materials, initialize_materials_TwoPhases
 
 # module markers
 #     include("markers.jl")

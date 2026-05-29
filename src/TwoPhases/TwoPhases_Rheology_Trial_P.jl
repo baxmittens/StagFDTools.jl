@@ -2,33 +2,33 @@
 
 bulk_viscosity(ϕ, η0, m) = η0*abs(ϕ)^m
 
-function PorosityRate(Φ, Pt, Pf, Pt0, Pf0, KΦ, ηΦ0, m, λ̇, sinψ, Δt)  
-    ηΦ      = bulk_viscosity(Φ, ηΦ0, m)
+function PorosityRate(Φ, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt)  
+    ηΦ      = bulk_viscosity(Φ, ξ0, m)
     dPtdt   = (Pt - Pt0) / Δt
     dPfdt   = (Pf - Pf0) / Δt
     dΦdt    = ((dPfdt - dPtdt)/KΦ + (Pf - Pt)/ηΦ + λ̇*sinψ) * 1
     return dΦdt, ηΦ
 end
 
-function PorosityResidual(Φ, Φ0, Pt, Pf, Pt0, Pf0, KΦ, ηΦ0, m, λ̇, sinψ, Δt) 
-    dΦdt = PorosityRate(Φ, Pt, Pf, Pt0, Pf0, KΦ, ηΦ0, m, λ̇, sinψ, Δt)[1] 
+function PorosityResidual(Φ, Φ0, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt) 
+    dΦdt = PorosityRate(Φ, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt)[1] 
     r    = Φ - (Φ0  + dΦdt * Δt)  
     return r 
 end
 
-function Porosity(Φ0, Pt, Pf, Pt0, Pf0, KΦ, ηΦ0, m, λ̇, sinψ, Δt) 
+function Porosity(Φ0, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt) 
 
-    dΦdt, ηΦ = PorosityRate(Φ0, Pt, Pf, Pt0, Pf0, KΦ, ηΦ0, m, λ̇, sinψ, Δt)
+    dΦdt, ηΦ = PorosityRate(Φ0, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt)
     Φ        = Φ0  + dΦdt * Δt
     r0       = 1.0
     for iter=1:2
-        r, dresdΦ = ad_value_and_derivative(PorosityResidual, Φ, Φ0, Pt, Pf, Pt0, Pf0, KΦ, ηΦ0, m, λ̇, sinψ, Δt)
+        r, dresdΦ = ad_value_and_derivative(PorosityResidual, Φ, Φ0, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt)
         if iter==1 r0 = abs(r) + 1e-10 end
         # @show iter, abs(r), abs(r)/r0
         # if min(abs(r), abs(r)/r0 ) < 1e-10 break end
         Φ    -=  r / dresdΦ
     end
-    dΦdt, ηΦ = PorosityRate(Φ, Pt, Pf, Pt0, Pf0, KΦ, ηΦ0, m, λ̇, sinψ, Δt)
+    dΦdt, ηΦ = PorosityRate(Φ, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt)
     return Φ, dΦdt, ηΦ 
 end
 
@@ -137,19 +137,19 @@ function LocalRheology_P(ε̇ ::SVector{N, D}, divVs, divqD, Pt0, Pf0, Φ0, τ0,
     ϵ    = 1e-10 # tolerance
     n    = materials.n[phases]
     m    = materials.m[phases]
-    η0   = materials.ηs0[phases]
+    η0   = materials.η0[phases]
     # B    = materials.B[phases]
     G    = materials.G[phases]
-    C    = materials.C[phases]
-    ηΦ   = materials.ηΦ0[phases]
+    C    = materials.plasticity.C[phases]
+    ηΦ   = materials.ξ0[phases]
     KΦ   = materials.KΦ[phases]
     Ks   = materials.Ks[phases]
     Kf   = materials.Kf[phases]
 
-    ηvp  = materials.ηvp[phases]
-    sinψ = materials.sinψ[phases]    
-    sinϕ = materials.sinϕ[phases] 
-    cosϕ = materials.cosϕ[phases]  
+    ηvp  = materials.plasticity.ηvp[phases]
+    sinψ = materials.plasticity.sinψ[phases]    
+    sinϕ = materials.plasticity.sinϕ[phases] 
+    cosϕ = materials.plasticity.cosϕ[phases]  
 
     # ηvep, λ̇, Pt, Pf, τII, Φ, f  = 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0
     
@@ -276,7 +276,7 @@ function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η , V, P, ΔP, P
         phc     = SMatrix{3,3}( phases.c[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
 
         k_ηf0   = materials.k_ηf0[phc]
-        ηΦ      = materials.ηΦ0[phc]
+        ηΦ      = materials.ξ0[phc]
         KΦ      = materials.KΦ[phc] 
         n       = materials.n_CK[phc] # Carman-Kozeny
         m       = materials.m[phc]
@@ -294,7 +294,7 @@ function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η , V, P, ΔP, P
         Pt0 = SetBCPf1(Pt0_loc, typepf, bcpf, Δ, ρfg)
 
         # Porosity
-        Φ_loc = if materials.linearizeϕ
+        Φ_loc = if materials.linearizeΦ
                     SMatrix{3,3, Float64}( Φ0_loc ) 
                 else
                     SMatrix{3,3, Float64}( Porosity(Φ0_loc[i,j], Pt[i,j], Pf[i,j], Pt0[i,j], Pf0[i,j], KΦ[i,j], ηΦ[i,j], m[i,j], 0.0, 0.0, Δ.t )[1] for i=1:3, j=1:3)
@@ -404,7 +404,7 @@ function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η , V, P, ΔP, P
         phc     = SMatrix{4,4}( phases.c[ii,jj] for ii in i-2:i+1,   jj in j-2:j+1)
 
         k_ηf0   = materials.k_ηf0[phc]
-        ηΦ      = materials.ηΦ0[phc]
+        ηΦ      = materials.ξ0[phc]
         KΦ      = materials.KΦ[phc] 
         n       = materials.n_CK[phc] # Carman-Kozeny
         m       = materials.m[phc]    # Carman-Kozeny
@@ -422,7 +422,7 @@ function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η , V, P, ΔP, P
         Pt0 = SetBCPf1(Pt0_loc, typept, bcpt, Δ, ρfg)
 
         # Porosity
-        Φ_loc = if materials.linearizeϕ
+        Φ_loc = if materials.linearizeΦ
                     SMatrix{4,4, Float64}( @. Φ0_loc ) 
                 else
                     SMatrix{4,4, Float64}( Porosity(Φ0_loc[ii], Pt[ii], Pf[ii], Pt0[ii], Pf0[ii], KΦ[ii], ηΦ[ii], m[ii], 0.0, 0.0, Δt )[1] for ii in eachindex(Φ0_loc) )
