@@ -120,6 +120,8 @@ include("TwoPhases/TwoPhases_Rheology_Trial_P.jl")
 export TangentOperator!, Porosity
 include("TwoPhases/TwoPhases_Rheology_Common.jl")
 export invII, StrainRateTrial, F
+include("Markers.jl")
+export InitialiseMarkerField, InitialisePhaseRatios, SetPhaseRatios!, compute_grid_fields_two_phases!
 end
 
 module TwoPhases_v1

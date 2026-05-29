@@ -157,6 +157,15 @@ end
     D_ctl_c =  [@MMatrix(zeros(5,5)) for _ in axes(ε̇.xx,1), _ in axes(ε̇.xx,2)]
     D_ctl_v =  [@MMatrix(zeros(5,5)) for _ in axes(ε̇.xy,1), _ in axes(ε̇.xy,2)]
     𝐷_ctl   = (c = D_ctl_c, v = D_ctl_v)
+    
+    ξ       = (c  =  ones(size_c...), v  =  ones(size_v...) )
+    G       = (c=zeros(size_c...), v=zeros(size_v...))
+    ρs      = (c=zeros(size_c...), v=zeros(size_v...))
+    ρf      = (c=zeros(size_c...), v=zeros(size_v...))
+    Ks      = (c=zeros(size_c...), v=zeros(size_v...))
+    KΦ      = (c=zeros(size_c...), v=zeros(size_v...))
+    Kf      = (c=zeros(size_c...), v=zeros(size_v...))
+
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
     phases  = (c= ones(Int64, size_c...), v= ones(Int64, size_v...), x =ones(Int64, size_x...), y=ones(Int64, size_y...) )  # phase on velocity points
     P       = (t=zeros(size_c...), f=zeros(size_c...))
@@ -190,6 +199,8 @@ end
     X_tilt = cosd(α).*Xv .- sind(α).*Yv
     Y_tilt = sind(α).*Xv .+ cosd(α).*Yv
     phases.v[inx_v, iny_v][(X_tilt.^2 ./ax.^2 .+ (Y_tilt).^2 ./ay^2) .< r^2 ] .= 2
+
+    phase_ratios = InitialisePhaseRatios(phases, nphases)
 
     # Boundary condition values
     BC = ( Vx = zeros(size_x...), Vy = zeros(size_y...), Pt = zeros(size_c...), Pf = zeros(size_c...))
@@ -232,12 +243,15 @@ end
         ρ0.s  .= ρ.s
         ρ0.f  .= ρ.f
 
+        # Compute bulk and shear moduli
+        compute_grid_fields_two_phases!(G, Ks, KΦ, Kf, ξ, materials, phase_ratios, nc, nphases)
+
         for iter=1:4
 
             @printf("     Step %04d --- Iteration %04d\n", it, iter)
 
             # Residual check
-            TangentOperator!( 𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, V, P, ΔP, P0, Φ, Φ0, type, BC, materials, phases, Δ)
+            TangentOperator!( 𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, P, ΔP, P0, Φ, Φ0, type, BC, materials, phases, Δ)
             ResidualMomentum2D_x!(R, V, P, P0, ΔP, τ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
             ResidualMomentum2D_y!(R, V, P, P0, ΔP, τ0, Φ0, 𝐷, phases, materials, number, type, BC, nc, Δ)
             ResidualContinuity2D!(R, V, P, (P0, Φ0, ρ0), phases, materials, number, type, BC, nc, Δ) 

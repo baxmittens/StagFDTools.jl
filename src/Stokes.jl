@@ -997,13 +997,13 @@ end
             if (i == 1 && j == 1) || (i == size(ε̇.xx, 1) && j == 1) || (i == 1 && j == size(ε̇.xx, 2)) || (i == size(ε̇.xx, 1) && j == size(ε̇.xx, 2))
                 # Avoid the outer corners - nothing is well defined there ;)
             else
-                Vx = SMatrix{2,3}(V.x[ii, jj] for ii in i:i+1, jj in j:j+2)
-                Vy = SMatrix{3,2}(V.y[ii, jj] for ii in i:i+2, jj in j:j+1)
-                bcx = SMatrix{2,3}(BC.Vx[ii, jj] for ii in i:i+1, jj in j:j+2)
-                bcy = SMatrix{3,2}(BC.Vy[ii, jj] for ii in i:i+2, jj in j:j+1)
+                Vx    = SMatrix{2,3}(    V.x[ii, jj] for ii in i:i+1, jj in j:j+2)
+                Vy    = SMatrix{3,2}(    V.y[ii, jj] for ii in i:i+2, jj in j:j+1)
+                bcx   = SMatrix{2,3}(  BC.Vx[ii, jj] for ii in i:i+1, jj in j:j+2)
+                bcy   = SMatrix{3,2}(  BC.Vy[ii, jj] for ii in i:i+2, jj in j:j+1)
                 typex = SMatrix{2,3}(type.Vx[ii, jj] for ii in i:i+1, jj in j:j+2)
                 typey = SMatrix{3,2}(type.Vy[ii, jj] for ii in i:i+2, jj in j:j+1)
-                τxy0 = SMatrix{2,2}(τ0.xy[ii, jj] for ii in i:i+1, jj in j:j+1)
+                τxy0  = SMatrix{2,2}(  τ0.xy[ii, jj] for ii in i:i+1, jj in j:j+1)
 
                 # Apply BC's
                 Vx = SetBCVx1(Vx, typex, bcx, Δ)
@@ -1084,16 +1084,16 @@ end
     # Loop over vertices
     Threads.@threads for j = 1+s:size(ε̇.xy, 2)-s
         for i = 1+s:size(ε̇.xy, 1)-s
-            Vx = SMatrix{3,2}(V.x[ii, jj] for ii in i-1:i+1, jj in j:j+1)
-            Vy = SMatrix{2,3}(V.y[ii, jj] for ii in i:i+1, jj in j-1:j+1)
-            bcx = SMatrix{3,2}(BC.Vx[ii, jj] for ii in i-1:i+1, jj in j:j+1)
-            bcy = SMatrix{2,3}(BC.Vy[ii, jj] for ii in i:i+1, jj in j-1:j+1)
+            Vx    = SMatrix{3,2}(    V.x[ii, jj] for ii in i-1:i+1, jj in j:j+1)
+            Vy    = SMatrix{2,3}(    V.y[ii, jj] for ii in i:i+1, jj in j-1:j+1)
+            bcx   = SMatrix{3,2}(  BC.Vx[ii, jj] for ii in i-1:i+1, jj in j:j+1)
+            bcy   = SMatrix{2,3}(  BC.Vy[ii, jj] for ii in i:i+1, jj in j-1:j+1)
             typex = SMatrix{3,2}(type.Vx[ii, jj] for ii in i-1:i+1, jj in j:j+1)
             typey = SMatrix{2,3}(type.Vy[ii, jj] for ii in i:i+1, jj in j-1:j+1)
-            τxx0 = SMatrix{2,2}(τ0.xx[ii, jj] for ii in i-1:i, jj in j-1:j)
-            τyy0 = SMatrix{2,2}(τ0.yy[ii, jj] for ii in i-1:i, jj in j-1:j)
-            P = SMatrix{2,2}(Pt[ii, jj] for ii in i-1:i, jj in j-1:j)
-            P0 = SMatrix{2,2}(Pt0[ii, jj] for ii in i-1:i, jj in j-1:j)
+            τxx0  = SMatrix{2,2}(  τ0.xx[ii, jj] for ii in i-1:i, jj in j-1:j)
+            τyy0  = SMatrix{2,2}(  τ0.yy[ii, jj] for ii in i-1:i, jj in j-1:j)
+            P     = SMatrix{2,2}(     Pt[ii, jj] for ii in i-1:i, jj in j-1:j)
+            P0    = SMatrix{2,2}(    Pt0[ii, jj] for ii in i-1:i, jj in j-1:j)
 
             # Apply BC's
             Vx = SetBCVx1(Vx, typex, bcx, Δ)
@@ -1107,8 +1107,8 @@ end
             τ0xx = av(τxx0)[1]
             τ0yy = av(τyy0)[1]
             τ0xy = τ0.xy[i, j]
-            P̄ = av(P)[1]
-            P̄0 = av(P0)[1]
+            P̄    = av(P)[1]
+            P̄0   = av(P0)[1]
 
             # Velocity gradient - centroids
             Dxx = (∂x(V̄x)*invΔx)[1]
@@ -1125,8 +1125,8 @@ end
             ε̇vec = SVector{4}(ϵ̇xx, ϵ̇yy, ϵ̇xy, P̄)
 
             # Tangent operator used for Newton Linearisation
-            stress_state = StressVector!(ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.v[i, j], Δ)
-            τ_vec, jac = ad_jacobian_first(StressVector!, ε̇vec, ε̇kk, Pt0[i, j], materials, phase_ratios.v[i, j], Δ)
+            stress_state = StressVector!(ε̇vec, ε̇kk, P̄0, materials, phase_ratios.v[i, j], Δ)
+            τ_vec, jac = ad_jacobian_first(StressVector!, ε̇vec, ε̇kk, P̄0, materials, phase_ratios.v[i, j], Δ)
             _, η_local, λ̇_local, = stress_state
 
             @views 𝐷_ctl.v[i, j] .= jac

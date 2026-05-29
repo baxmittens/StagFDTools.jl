@@ -126,7 +126,7 @@ function residual_two_phase_P(x ::SVector{N, D}, ηve, Δt, ε̇II_eff, Pt_trial
     ]
 end
 
-function LocalRheology_P(ε̇ ::SVector{N, D}, divVs, divqD, Pt0, Pf0, Φ0, τ0, materials, phases, Δ) where {N, D}
+function LocalRheology_P(ε̇ ::SVector{N, D}, divVs, divqD, Pt0, Pf0, Φ0, materials, phases, Δ) where {N, D}
 
     # Effective strain rate & pressure
     ε̇II_eff  = invII(ε̇)
@@ -228,8 +228,8 @@ function LocalRheology_P(ε̇ ::SVector{N, D}, divVs, divqD, Pt0, Pf0, Φ0, τ0,
 end
 
 
-function StressVector_P!(ε̇, divVs, divqD, Pt0, Pf0, Φ0, τ0, materials, phases, Δ) 
-    η, λ̇, Pt, Pf, τII, Φ, f = LocalRheology_P(ε̇, divVs, divqD, Pt0, Pf0, Φ0, τ0, materials, phases, Δ)
+function StressVector_P!(ε̇, divVs, divqD, Pt0, Pf0, Φ0, materials, phases, Δ) 
+    η, λ̇, Pt, Pf, τII, Φ, f = LocalRheology_P(ε̇, divVs, divqD, Pt0, Pf0, Φ0, materials, phases, Δ)
     τ  = @SVector([2 * η * ε̇[1],
                    2 * η * ε̇[2],
                    2 * η * ε̇[3],
@@ -238,8 +238,8 @@ function StressVector_P!(ε̇, divVs, divqD, Pt0, Pf0, Φ0, τ0, materials, phas
     return τ, η, λ̇, τII, Φ, f
 end
 
-function StressVector_P2!(ε̇, divVs, divqD, Pt0, Pf0, Φ0, τ0, materials, phases, Δ) 
-    η, λ̇, Pt, Pf, τII, Φ, f = LocalRheology_P(ε̇, divVs, divqD, Pt0, Pf0, Φ0, τ0, materials, phases, Δ)
+function StressVector_P2!(ε̇, divVs, divqD, Pt0, Pf0, Φ0, materials, phases, Δ) 
+    η, λ̇, Pt, Pf, τII, Φ, f = LocalRheology_P(ε̇, divVs, divqD, Pt0, Pf0, Φ0, materials, phases, Δ)
     τ  = @SVector([2 * η * ε̇[1],
                    2 * η * ε̇[2],
                    2 * η * ε̇[3],
@@ -248,10 +248,10 @@ function StressVector_P2!(ε̇, divVs, divqD, Pt0, Pf0, Φ0, τ0, materials, pha
     return τ
 end
 
-function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η , V, P, ΔP, P0, Φ, Φ0, type, BC, materials, phases, Δ)
+function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, G, V, P, ΔP, P0, Φ, Φ0, type, BC, materials, phases, Δ)
 
     _ones = @SVector ones(5)
-    Δt    = Δ.t
+    invΔx, invΔy, Δt = 1 / Δ.x, 1 / Δ.y, Δ.t
 
     ########################### Loop over centroids ###########################
     for j=2:size(ε̇.xx,2)-1, i=2:size(ε̇.xx,1)-1
@@ -300,18 +300,42 @@ function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η , V, P, ΔP, P
                     SMatrix{3,3, Float64}( Porosity(Φ0_loc[i,j], Pt[i,j], Pf[i,j], Pt0[i,j], Pf0[i,j], KΦ[i,j], ηΦ[i,j], m[i,j], 0.0, 0.0, Δ.t )[1] for i=1:3, j=1:3)
         end 
 
-        # Kinematics
-        Dxx = ∂x_inn(Vx) / Δ.x 
-        Dyy = ∂y_inn(Vy) / Δ.y 
-        Dxy = ∂y(Vx) / Δ.y
-        Dyx = ∂x(Vy) / Δ.x
+
+        # Interp Vy -> Vx, Vx - > Vy
+        V̄y = SMatrix{2,1}(av2D(Vy))
+        V̄x = SMatrix{1,2}(av2D(Vx))
+
+        # More averages
+        τ0xx = τ0.xx[i, j]
+        τ0yy = τ0.yy[i, j]
+        τ0xy = av(τxy0)[1]
+
+        # Velocity gradient - centroids
+        Dxx = (∂x(Vx)*invΔx)[:, 2:end-1][1]
+        Dxy = (∂y(V̄x)*invΔy)[1]
+        Dyy = (∂y(Vy)*invΔy)[2:end-1, :][1]
+        Dyx = (∂x(V̄y)*invΔx)[1]
+
+        # Deviatoric strain rate
+        ε̇xx, ε̇yy, ε̇xy, ε̇kk = deviatoric_strain_rate(Dxx, Dxy, Dyx, Dyy)
+
+        # Effective visco-elastic strain rate
+        _2GΔt = inv(2 * G.c[i, j] * Δ.t)
+        ϵ̇xx, ϵ̇yy, ϵ̇xy = effective_strain_rate(ε̇xx, ε̇yy, ε̇xy, τ0xx, τ0yy, τ0xy, _2GΔt)
+        ε̇vec = SVector{5}(ϵ̇xx, ϵ̇yy, ϵ̇xy, P.t[i, j], P.f[i,j])
+
+        # # Kinematics
+        # Dxx = ∂x_inn(Vx) / Δ.x 
+        # Dyy = ∂y_inn(Vy) / Δ.y 
+        # Dxy = ∂y(Vx) / Δ.y
+        # Dyx = ∂x(Vy) / Δ.x
         
-        # Strain rate
-        Dkk = Dxx .+ Dyy
-        ε̇xx = @. Dxx - Dkk ./ 3
-        ε̇yy = @. Dyy - Dkk ./ 3
-        ε̇xy = @. (Dxy + Dyx) ./ 2
-        ε̇̄xy = av(ε̇xy)
+        # # Strain rate
+        # Dkk = Dxx .+ Dyy
+        # ε̇xx = @. Dxx - Dkk ./ 3
+        # ε̇yy = @. Dyy - Dkk ./ 3
+        # ε̇xy = @. (Dxy + Dyx) ./ 2
+        # ε̇̄xy = av(ε̇xy)
 
         # Darcy flux
         k_μ_xx  = SMatrix{3,3, Float64}( @.  k_ηf0 * max.(Φ_loc, 1e-6).^n  )
@@ -324,17 +348,17 @@ function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η , V, P, ΔP, P
         qDy     =  SVector{2, Float64}( - ky_μ_yy .*  ∂Pf∂y - ρfg ) 
         divqD   = ((qDx[2] - qDx[1]) / Δ.x + (qDy[2] - qDy[1]) / Δ.y)[1]
        
-        # Visco-elasticity
-        G      = materials.G[phases.c[i,j]]
-        τ̄xy0   = av(τxy0)
-        ε̇vec   = @SVector([ε̇xx[1]+τ0.xx[i,j]/(2*G[1]*Δ.t), ε̇yy[1]+τ0.yy[i,j]/(2*G[1]*Δ.t), ε̇̄xy[1]+τ̄xy0[1]/(2*G[1]*Δ.t), P.t[i,j], P.f[i,j]])
-        τ0_loc = @SVector([τ0.xx[i,j], τ0.yy[i,j], τ̄xy0[1]])
+        # # Visco-elasticity
+        # G1      = materials.G[phases.c[i,j]]
+        # τ̄xy0   = av(τxy0)
+        # ε̇vec   = @SVector([ε̇xx[1]+τ0.xx[i,j]/(2*G1[1]*Δ.t), ε̇yy[1]+τ0.yy[i,j]/(2*G[1]*Δ.t), ε̇̄xy[1]+τ̄xy0[1]/(2*G[1]*Δ.t), P.t[i,j], P.f[i,j]])
+        # τ0_loc = @SVector([τ0.xx[i,j], τ0.yy[i,j], τ̄xy0[1]])
 
         ##################################
 
         # Tangent operator used for Newton Linearisation
-        τ_vec, jac = ad_value_and_jacobian(StressVector_P2!, ε̇vec, Dkk[1], divqD, P0.t[i,j], P0.f[i,j], Φ0.c[i,j], τ0_loc, materials, phases.c[i,j], Δ)
-        η_local, Pt1, Pf1, λ̇_local, τII_local, Φ_local, f_local = LocalRheology_P(ε̇vec, Dkk[1], divqD, P0.t[i,j], P0.f[i,j], Φ0.c[i,j], τ0_loc, materials, phases.c[i,j], Δ)
+        τ_vec, jac = ad_value_and_jacobian(StressVector_P2!, ε̇vec, ε̇kk, divqD, P0.t[i,j], P0.f[i,j], Φ0.c[i,j], materials, phases.c[i,j], Δ)
+        η_local, Pt1, Pf1, λ̇_local, τII_local, Φ_local, f_local = LocalRheology_P(ε̇vec, ε̇kk, divqD, P0.t[i,j], P0.f[i,j], Φ0.c[i,j], materials, phases.c[i,j], Δ)
         @views 𝐷_ctl.c[i,j] .= jac
 
         #################################
@@ -353,7 +377,7 @@ function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η , V, P, ΔP, P
         τ.f[i,j]  = f_local
         ε̇.xx[i,j] = ε̇xx[1]
         ε̇.yy[i,j] = ε̇yy[1]
-        ε̇.II[i,j] = invII( @SVector([ε̇xx[1], ε̇yy[1], ε̇̄xy[1]]) )
+        ε̇.II[i,j] = sqrt(1 / 2 * (ε̇xx^2 + ε̇yy^2) + ε̇xy^2)
         λ̇.c[i,j]  = λ̇_local
         Φ.c[i,j]  = Φ_local
         η.c[i,j]  = η_local
@@ -428,19 +452,19 @@ function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η , V, P, ΔP, P
                     SMatrix{4,4, Float64}( Porosity(Φ0_loc[ii], Pt[ii], Pf[ii], Pt0[ii], Pf0[ii], KΦ[ii], ηΦ[ii], m[ii], 0.0, 0.0, Δt )[1] for ii in eachindex(Φ0_loc) )
                 end 
 
-        # Kinematics
-        Dxx    = ∂x(Vx) / Δ.x
-        Dyy    = ∂y(Vy) / Δ.y
-        Dxy    = ∂y_inn(Vx) / Δ.y
-        Dyx    = ∂x_inn(Vy) / Δ.x
+        # # Kinematics
+        # Dxx    = ∂x(Vx) / Δ.x
+        # Dyy    = ∂y(Vy) / Δ.y
+        # Dxy    = ∂y_inn(Vx) / Δ.y
+        # Dyx    = ∂x_inn(Vy) / Δ.x
 
-        # Strain rate
-        Dkk   = @. Dxx + Dyy
-        ε̇xx   = @. Dxx - Dkk / 3
-        ε̇yy   = @. Dyy - Dkk / 3
-        ε̇xy   = @. (Dxy + Dyx) /2
-        ε̇̄xx   = av(ε̇xx)
-        ε̇̄yy   = av(ε̇yy)
+        # # Strain rate
+        # Dkk   = @. Dxx + Dyy
+        # ε̇xx   = @. Dxx - Dkk / 3
+        # ε̇yy   = @. Dyy - Dkk / 3
+        # ε̇xy   = @. (Dxy + Dyx) /2
+        # ε̇̄xx   = av(ε̇xx)
+        # ε̇̄yy   = av(ε̇yy)
 
         # Darcy flux
         k_μ_xx  = SMatrix{4,4, Float64}( @.  k_ηf0 * max.(Φ_loc, 1e-6).^n  )
@@ -454,37 +478,66 @@ function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η , V, P, ΔP, P
         divqD   = ∂x(qDx) / Δ.x .+ ∂y(qDy) / Δ.y 
         divqD̄   = av(divqD)[1]
         
-        # Visco-elasticity
-        G      = materials.G[phases.v[i,j]]
-        τ̄xx0   = av(τxx0)
-        τ̄yy0   = av(τyy0)
-        P̄t     = av(  Pt)
-        P̄f     = av(  Pf)
-        ε̇vec   = @SVector([ε̇̄xx[1]+τ̄xx0[1]/(2*G[1]*Δ.t), ε̇̄yy[1]+τ̄yy0[1]/(2*G[1]*Δ.t), ε̇xy[1]+τ0.xy[i,j]/(2*G[1]*Δ.t), P̄t[1], P̄f[1]])
-        τ0_loc = @SVector([τ̄xx0[1], τ̄yy0[1], τ0.xy[i,j]])
+        # # Visco-elasticity
+        # G      = materials.G[phases.v[i,j]]
+        # τ̄xx0   = av(τxx0)
+        # τ̄yy0   = av(τyy0)
+        # P̄t     = av(  Pt)
+        # P̄f     = av(  Pf)
+        # ε̇vec   = @SVector([ε̇̄xx[1]+τ̄xx0[1]/(2*G[1]*Δ.t), ε̇̄yy[1]+τ̄yy0[1]/(2*G[1]*Δ.t), ε̇xy[1]+τ0.xy[i,j]/(2*G[1]*Δ.t), P̄t[1], P̄f[1]])
+        # τ0_loc = @SVector([τ̄xx0[1], τ̄yy0[1], τ0.xy[i,j]])
 
-        D̄kk   = av(Dkk)
-        ϕ̄0    = av(Φ0_loc)
-        P̄t0   = av(Pt0)
-        P̄f0   = av(Pf0)
+        # D̄kk   = av(Dkk)
+        # 
+        # P̄t0   = av(Pt0)
+        # P̄f0   = av(Pf0)
+
+
+        # Interp Vy -> Vx, Vx - > Vy
+        V̄y = SMatrix{1,2}(av2D(Vy))
+        V̄x = SMatrix{2,1}(av2D(Vx))
+
+        # # More averages
+        τ0xx = av(τxx0)[1]
+        τ0yy = av(τyy0)[1]
+        τ0xy = τ0.xy[i, j]
+        P̄t   = av(Pt)[2,2]
+        P̄f   = av(  Pf)[2,2]
+        P̄t0  = av(Pt0)[2,2]
+        P̄f0  = av(Pf0)[2,2]
+        ϕ̄0   = av(Φ0_loc)[2,2]
+
+        # Velocity gradient - centroids
+        Dxx = (∂x(V̄x)*invΔx)[1]
+        Dxy = (∂y(Vx)*invΔy)[2:end-1, :][1]
+        Dyy = (∂y(V̄y)*invΔy)[1]
+        Dyx = (∂x(Vy)*invΔx)[:, 2:end-1][1]
+
+        # Deviatoric strain rate
+        ε̇xx, ε̇yy, ε̇xy, ε̇kk = deviatoric_strain_rate(Dxx, Dxy, Dyx, Dyy)
+
+        # Effective visco-elastic strain rate
+        _2GΔt = inv(2 * G.v[i, j] * Δ.t)
+        ϵ̇xx, ϵ̇yy, ϵ̇xy = effective_strain_rate(ε̇xx, ε̇yy, ε̇xy, τ0xx, τ0yy, τ0xy, _2GΔt)
+        ε̇vec = SVector{5}(ϵ̇xx, ϵ̇yy, ϵ̇xy, P̄t, P̄f)
 
         ##################################
 
         # Tangent operator used for Newton Linearisation
-        τ_vec, jac = ad_value_and_jacobian(StressVector_P2!, ε̇vec, D̄kk[1], divqD̄, P̄t0[1], P̄f0[1], ϕ̄0[1], τ0_loc, materials, phases.v[i,j], Δ)
-        η_local, Pt1, Pf1, λ̇_local, τII_local, Φ_local, f_local = LocalRheology_P(ε̇vec, D̄kk[1], divqD̄, P̄t0[1], P̄f0[1], ϕ̄0[1], τ0_loc, materials, phases.v[i,j], Δ)
+        τ_vec, jac = ad_value_and_jacobian(StressVector_P2!, ε̇vec, ε̇kk, divqD̄, P̄t0, P̄f0, ϕ̄0, materials, phases.v[i,j], Δ)
+        η_local, Pt1, Pf1, λ̇_local, τII_local, Φ_local, f_local = LocalRheology_P(ε̇vec, ε̇kk, divqD̄, P̄t0, P̄f0, ϕ̄0[1], materials, phases.v[i,j], Δ)
         @views 𝐷_ctl.v[i,j] .= jac
 
         ##################################
 
         # Tangent operator used for Picard Linearisation
-        𝐷.v[i,j] .= diagm(2 * η_local * _ones)
+        𝐷.v[i,j]     .= diagm(2 * η_local * _ones)
         𝐷.v[i,j][4,4] = 1
         𝐷.v[i,j][5,5] = 1
 
         # Update stress
         τ.xy[i,j] = τ_vec[3]
-        ε̇.xy[i,j] = ε̇xy[1]
+        ε̇.xy[i,j] = ε̇xy
         λ̇.v[i,j]  = λ̇_local
         η.v[i,j]  = η_local
     end
