@@ -79,11 +79,6 @@ end
     k_ηf0 = materials.k_ηf0[1]
     lc = sqrt((k_ηf0) * (materials.ξ0[1] + 4/3*materials.η0[1])) 
 
-    # # For plasticity
-    # @. materials.cosϕ  = cosd(materials.ϕ)
-    # @. materials.sinϕ  = sind(materials.ϕ)
-    # @. materials.sinψ  = sind(materials.ψ)
-    
     # Resolution
     inx_Vx, iny_Vx, inx_Vy, iny_Vy, inx_c, iny_c, inx_v, iny_v, size_x, size_y, size_c, size_v = Ranges(nc)
 
