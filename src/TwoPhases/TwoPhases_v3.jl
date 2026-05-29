@@ -524,27 +524,17 @@ function AssembleMomentum2D_x!(K, V, P, ΔP, old, 𝐷, rheo, materials, num, pa
     τ0 , P0, ϕ0, ρ0 = old
     G, Ks, KΦ, Kf, ξ0, m, ρsi, ρfi, k_ηf0, n_CK = rheo
 
-    ∂R∂Vx = @MMatrix zeros(3,3)
-    ∂R∂Vy = @MMatrix zeros(4,4)
-    ∂R∂Pt = @MMatrix zeros(2,3)
-    ∂R∂Pf = @MMatrix zeros(2,3)
-
-    Vx_loc  = @MMatrix zeros(3,3)
-    Vy_loc  = @MMatrix zeros(4,4)
-    Pt_loc  = @MMatrix zeros(2,3)
-    Pf_loc  = @MMatrix zeros(2,3)
-                
     shift    = (x=1, y=2)
     for j in 1+shift.y:nc.y+shift.y, i in 1+shift.x:nc.x+shift.x+1
-        Vx_loc    .= SMatrix{3,3}(      V.x[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
-        Vy_loc    .= SMatrix{4,4}(      V.y[ii,jj] for ii in i-1:i+2, jj in j-2:j+1)
+        Vx_loc     = SMatrix{3,3}(      V.x[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        Vy_loc     = SMatrix{4,4}(      V.y[ii,jj] for ii in i-1:i+2, jj in j-2:j+1)
         bcx_loc    = SMatrix{3,3}(    BC.Vx[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
         bcy_loc    = SMatrix{4,4}(    BC.Vy[ii,jj] for ii in i-1:i+2, jj in j-2:j+1)
         typex_loc  = SMatrix{3,3}(  type.Vx[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
         typey_loc  = SMatrix{4,4}(  type.Vy[ii,jj] for ii in i-1:i+2, jj in j-2:j+1)
 
-        Pt_loc    .= SMatrix{2,3}(      P.t[ii,jj] for ii in i-1:i,   jj in j-2:j  )
-        Pf_loc    .= SMatrix{2,3}(      P.f[ii,jj] for ii in i-1:i,   jj in j-2:j  )
+        Pt_loc     = SMatrix{2,3}(      P.t[ii,jj] for ii in i-1:i,   jj in j-2:j  )
+        Pf_loc     = SMatrix{2,3}(      P.f[ii,jj] for ii in i-1:i,   jj in j-2:j  )
         ΔPt_loc    = SMatrix{2,1}(     ΔP.t[ii,jj] for ii in i-1:i,   jj in j-1:j-1)
         τxx0       = SMatrix{2,3}(    τ0.xx[ii,jj] for ii in i-1:i,   jj in j-2:j  )
         τyy0       = SMatrix{2,3}(    τ0.yy[ii,jj] for ii in i-1:i,   jj in j-2:j  )
@@ -561,17 +551,12 @@ function AssembleMomentum2D_x!(K, V, P, ΔP, old, 𝐷, rheo, materials, num, pa
         τ0_loc     = (xx=τxx0, yy=τyy0, xy=τxy0)
 
         if type.Vx[i,j] == :in
-     
-            fill!(∂R∂Vx, 0.0)
-            fill!(∂R∂Vy, 0.0)
-            fill!(∂R∂Pt, 0.0)
-            fill!(∂R∂Pf, 0.0)
 
-            ∂Vx, ∂Vy, ∂Pt, ∂Pf = ad_partial_gradients(SMomentum_x_Generic, (Vx_loc, Vy_loc, Pt_loc, Pf_loc), ΔPt_loc, τ0_loc, G_loc, D, materials, type_loc, bcv_loc, Δ)
-            ∂R∂Vx .= ∂Vx
-            ∂R∂Vy .= ∂Vy
-            ∂R∂Pt .= ∂Pt
-            ∂R∂Pf .= ∂Pf
+            ∂R∂Vx = ad_gradient(Vx_loc -> SMomentum_x_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPt_loc, τ0_loc, G_loc, D, materials, type_loc, bcv_loc, Δ), Vx_loc)
+            ∂R∂Vy = ad_gradient(Vy_loc -> SMomentum_x_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPt_loc, τ0_loc, G_loc, D, materials, type_loc, bcv_loc, Δ), Vy_loc)
+            ∂R∂Pt = ad_gradient(Pt_loc -> SMomentum_x_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPt_loc, τ0_loc, G_loc, D, materials, type_loc, bcv_loc, Δ), Pt_loc)
+            ∂R∂Pf = ad_gradient(Pf_loc -> SMomentum_x_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPt_loc, τ0_loc, G_loc, D, materials, type_loc, bcv_loc, Δ), Pf_loc)
+            
             # Vx --- Vx
             Local = num.Vx[i-1:i+1,j-1:j+1] .* pattern[1][1]
             for jj in axes(Local,2), ii in axes(Local,1)
@@ -600,6 +585,7 @@ function AssembleMomentum2D_x!(K, V, P, ΔP, old, 𝐷, rheo, materials, num, pa
                     K[1][4][num.Vx[i,j], Local[ii,jj]] = ∂R∂Pf[ii,jj]  
                 end
             end 
+
         end
     end
     return nothing
