@@ -317,14 +317,12 @@ function Continuity(Vx, Vy, Pt_loc, Pf_loc, old, rheo, materials, type, bcv, Δ)
     invΔy   = 1 / Δ.y
     Δt      = Δ.t
 
-    # @info "debug"
-    # @show ξ0, m 
-    # @show Ks, KΦ, Kf, 
-    # @show ρf_ref
-
     # Density - currently using reference density fluid density
     ρ0f = SMatrix{3, 3}( ρfi )    
-    ρfg  = SVector{2}(@. materials.g[2] * 0.5*(ρ0f[2,1:end-1] + ρ0f[2,2:end]) )
+    ρfg = SVector(
+        materials.g[2] * 0.5 * (ρ0f[2,1] + ρ0f[2,2]),
+        materials.g[2] * 0.5 * (ρ0f[2,2] + ρ0f[2,3]),
+    )   
     Pf   = SetBCPf1(Pf_loc, type.pf, bcv.pf, Δ, ρfg)
     Pt   = SetBCPf1(Pt_loc, type.pt, bcv.pt, Δ, ρfg)
 
@@ -369,11 +367,21 @@ function Continuity(Vx, Vy, Pt_loc, Pf_loc, old, rheo, materials, type, bcv, Δ)
         ρs     = SMatrix{3, 3}( @. ρs0 + ρs0 * Δt*dlnρsdt)
         ρim    = SMatrix{3, 3}( @. (1-Φ ) * ρs )
         ∂ρim∂t = (ρim[2,2] - ρim0[2,2]) / Δt
-        qx     = SVector{2}( @. (ρim[1:end-1,2] .+  ρim[2:end,2])/2 .* Vx[:,2] ) # Brucite paper, Fowler (1985)
-        qy     = SVector{2}( @. (ρim[2,1:end-1] .+  ρim[2,2:end])/2 .* Vy[2,:] ) # Brucite paper, Fowler (1985)
+        # Brucite paper, Fowler (1985)
+        qx = SVector(
+            ((ρim[1,2] + ρim[2,2]) * 0.5) * Vx[1,2],
+            ((ρim[2,2] + ρim[3,2]) * 0.5) * Vx[2,2],
+        )
+        
+        qy = SVector(
+            ((ρim[2,1] + ρim[2,2]) * 0.5) * Vy[2,1],
+            ((ρim[2,2] + ρim[2,3]) * 0.5) * Vy[2,2],
+        )
         fp     = ∂ρim∂t  +  (qx[2] - qx[1]) * invΔx + (qy[2] - qy[1]) * invΔy
-        # fp      = dlnρsdt[2,2] - dΦdt[2,2]/(1-Φ[2,2]) +   divVs
     end
+
+    fp = 0
+
     return fp
 end
 
@@ -387,7 +395,7 @@ function FluidContinuity(Vx, Vy, Pt_loc, Pf_loc, ΔPf_loc, old, rheo, materials,
 
     # Density - currently explicit in time (= using old fluid density)
     ρ0f  = ρfi
-    ρfg  = SVector{2}(@. materials.g[2] * 0.5*(ρ0f[2,1:end-1] + ρ0f[2,2:end]) )
+    ρfg  = SVector{2}(materials.g[2] * 0.5 * (ρ0f[2,i] + ρ0f[2,i+1]) for i ∈ 1:2)  
     Pf   = SetBCPf1(Pf_loc, type.pf, bcv.pf, Δ, ρfg)
     Pt   = SetBCPf1(Pt_loc, type.pt, bcv.pt, Δ, ρfg)
 
@@ -401,28 +409,42 @@ function FluidContinuity(Vx, Vy, Pt_loc, Pf_loc, ΔPf_loc, old, rheo, materials,
         dΦdt    = SMatrix{3, 3}( Porosity(Φ0[ii], Pt[ii], Pf[ii], Pt0[ii], Pf0[ii], KΦ[ii], ξ0[ii], m[ii], 0., 0., Δt)[2] for ii in eachindex(Φ0) )
     end
 
-    # if Φ[1]<0 || Φ[2] <0 ||  Φ[3] <0
-    #     @show Φ
-    #     @show Pt
-    #     @show Pf
-    #     @show Pt0
-    #     @show Pf0
-    # end
+    # # if Φ[1]<0 || Φ[2] <0 ||  Φ[3] <0
+    # #     @show Φ
+    # #     @show Pt
+    # #     @show Pf
+    # #     @show Pt0
+    # #     @show Pf0
+    # # end
     
     dPsdt   = SMatrix{3, 3}( @. dΦdt*(Pt - Pf*Φ)/(1-Φ)^2 + (dPtdt - Φ*dPfdt - Pf*dΦdt) / (1 - Φ) )
     dlnρsdt = SMatrix{3, 3}( @. 1/Ks * ( dPsdt ) )
     dlnρfdt = dPfdt[2,2] / Kf[2,2]
 
     # Interpolate porosity to velocity nodes
-    Φxⁿ = SVector{2}(@. (Φ[1:end-1,2].^n_CK[1:end-1,2] + Φ[2:end,2].^n_CK[2:end,2] )/2 )
-    Φyⁿ = SVector{2}(@. (Φ[2,1:end-1].^n_CK[2,1:end-1] + Φ[2,2:end].^n_CK[2,2:end] )/2 )
+    Φxⁿ = SVector(
+        (Φ[1,2]^n_CK[1,2] + Φ[2,2]^n_CK[2,2]) * 0.5,
+        (Φ[2,2]^n_CK[2,2] + Φ[3,2]^n_CK[3,2]) * 0.5,
+    )
+    
+    Φyⁿ = SVector(
+        (Φ[2,1]^n_CK[2,1] + Φ[2,2]^n_CK[2,2]) * 0.5,
+        (Φ[2,2]^n_CK[2,2] + Φ[2,3]^n_CK[2,3]) * 0.5,
+    )
 
-    kμ_xx = SVector{2}( @. 1/2 * (kμ[2:end,2:end-1] .+  kμ[1:end-1,2:end-1]) ) 
-    kμ_yy = SVector{2}( @. 1/2 * (kμ[2:end-1,2:end] .+  kμ[2:end-1,1:end-1]) ) 
+    # This allocates? why?
+    # Φxⁿ = SVector{2}(0.5 * (Φ[i,2]^n_CK[i,2] + Φ[i+1,2]^n_CK[i+1,2]) for i ∈ 1:2)
+    # Φyⁿ = SVector{2}(0.5 * (Φ[2,i]^n_CK[2,i] + Φ[2,i+1]^n_CK[2,i+1]) for i ∈ 1:2)
 
-    qx = SVector{2}(@. -kμ_xx * Φxⁿ * ((Pf[2:end,2] - Pf[1:end-1,2]) * invΔx      )  )
-    qy = SVector{2}(@. -kμ_yy * Φyⁿ * ((Pf[2,2:end] - Pf[2,1:end-1]) * invΔy - ρfg)  )
+    # Fluid conductivity
+    kμ_xx = SVector{2}(0.5 * (kμ[i+1,2] + kμ[i,2]) for i ∈ 1:2)
+    kμ_yy = SVector{2}(0.5 * (kμ[2,i+1] + kμ[2,i]) for i ∈ 1:2)
 
+    # Darcy flux
+    qx = SVector{2}( -kμ_xx[i] * Φxⁿ[i] * ( (Pf[i+1,2] - Pf[i,2]) * invΔx          ) for i ∈ 1:2)
+    qy = SVector{2}( -kμ_yy[i] * Φyⁿ[i] * (((Pf[2,i+1] - Pf[2,i]) * invΔy) - ρfg[i]) for i ∈ 1:2)
+
+    # Divergence of Darcy flux and solid velocity
     divqD = ( (  qx[2] -   qx[1]) * invΔx + (  qy[2] -   qy[1]) * invΔy)
     divVs = ( (Vx[2,2] - Vx[1,2]) * invΔx + (Vy[2,2] - Vy[2,1]) * invΔy) 
     
@@ -442,10 +464,10 @@ function FluidContinuity(Vx, Vy, Pt_loc, Pf_loc, ΔPf_loc, old, rheo, materials,
         ρt0    = SMatrix{3, 3}( @. (1-Φ0 )* ρs0 + Φ0 * ρf0 )
         
         ∂ρt∂t  = (ρt[2,2] - ρt0[2,2]) / Δt
-        ρfx    = SVector{2}( @. (ρf[1:end-1,2] + ρf[2:end,2])/2 )
-        ρfy    = SVector{2}( @. (ρf[2,1:end-1] + ρf[2,2:end])/2 )
-        ρtx    = SVector{2}( @. (ρt[1:end-1,2] + ρt[2:end,2])/2 )
-        ρty    = SVector{2}( @. (ρt[2,1:end-1] + ρt[2,2:end])/2 )
+        ρfx    = SVector{2}(0.5 * (ρf[i,2] + ρf[i+1,2]) for i ∈ 1:2)
+        ρfy    = SVector{2}(0.5 * (ρf[2,i] + ρf[2,i+1]) for i ∈ 1:2)
+        ρtx    = SVector{2}(0.5 * (ρt[i,2] + ρt[i+1,2]) for i ∈ 1:2)
+        ρty    = SVector{2}(0.5 * (ρt[2,i] + ρt[2,i+1]) for i ∈ 1:2)
         qρx    = SVector{2}( @. ρfx * qx +  ρtx * Vx[:,2] )     # Brucite paper, Fowler (1985)
         qρy    = SVector{2}( @. ρfy * qy +  ρty * Vy[2,:] )     # Brucite paper, Fowler (1985)    
         
@@ -456,7 +478,6 @@ function FluidContinuity(Vx, Vy, Pt_loc, Pf_loc, ΔPf_loc, old, rheo, materials,
         end
         fp     = ∂ρt∂t  +  (qρx[2] - qρx[1]) * invΔx + (qρy[2] - qρy[1]) * invΔy 
     end
-
     return fp
 end
 
