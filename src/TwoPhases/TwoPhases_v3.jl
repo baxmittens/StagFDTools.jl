@@ -379,9 +379,6 @@ function Continuity(Vx, Vy, Pt_loc, Pf_loc, old, rheo, materials, type, bcv, Δ)
         )
         fp     = ∂ρim∂t  +  (qx[2] - qx[1]) * invΔx + (qy[2] - qy[1]) * invΔy
     end
-
-    fp = 0
-
     return fp
 end
 
@@ -653,26 +650,16 @@ function AssembleMomentum2D_y!(K, V, P, ΔP, old, 𝐷, rheo, materials, num, pa
     τ0 , P0, Φ0, ρ0 = old
     G, Ks, KΦ, Kf, ξ0, m, ρsi, ρfi, k_ηf0, n_CK = rheo
 
-    ∂R∂Vy = @MMatrix zeros(3,3)
-    ∂R∂Vx = @MMatrix zeros(4,4)
-    ∂R∂Pt = @MMatrix zeros(3,2)
-    ∂R∂Pf = @MMatrix zeros(3,2)
-
-    Vx_loc  = @MMatrix zeros(4,4)
-    Vy_loc  = @MMatrix zeros(3,3)
-    Pt_loc  = @MMatrix zeros(3,2)
-    Pf_loc  = @MMatrix zeros(3,2)
-
     shift    = (x=2, y=1)
     for j in 1+shift.y:nc.y+shift.y+1, i in 1+shift.x:nc.x+shift.x
-        Vx_loc    .= SMatrix{4,4}(      V.x[ii,jj] for ii in i-2:i+1, jj in j-1:j+2)
-        Vy_loc    .= SMatrix{3,3}(      V.y[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        Vx_loc     = SMatrix{4,4}(      V.x[ii,jj] for ii in i-2:i+1, jj in j-1:j+2)
+        Vy_loc     = SMatrix{3,3}(      V.y[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
         bcx_loc    = SMatrix{4,4}(    BC.Vx[ii,jj] for ii in i-2:i+1, jj in j-1:j+2)
         bcy_loc    = SMatrix{3,3}(    BC.Vy[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
         typex_loc  = SMatrix{4,4}(  type.Vx[ii,jj] for ii in i-2:i+1, jj in j-1:j+2)
         typey_loc  = SMatrix{3,3}(  type.Vy[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
-        Pt_loc    .= SMatrix{3,2}(      P.t[ii,jj] for ii in i-2:i,   jj in j-1:j  )
-        Pf_loc    .= SMatrix{3,2}(      P.f[ii,jj] for ii in i-2:i,   jj in j-1:j  )
+        Pt_loc     = SMatrix{3,2}(      P.t[ii,jj] for ii in i-2:i,   jj in j-1:j  )
+        Pf_loc     = SMatrix{3,2}(      P.f[ii,jj] for ii in i-2:i,   jj in j-1:j  )
         ΔPt_loc    = @inline SMatrix{1,2}(@inbounds     ΔP.t[ii,jj] for ii in i-1:i-1, jj in j-1:j  )
         ΔPf_loc    = SMatrix{1,2}(     ΔP.f[ii,jj] for ii in i-1:i-1, jj in j-1:j  )
         Pt0_loc    = SMatrix{3,2}(     P0.t[ii,jj] for ii in i-2:i,   jj in j-1:j  )
@@ -707,26 +694,11 @@ function AssembleMomentum2D_y!(K, V, P, ΔP, old, 𝐷, rheo, materials, num, pa
 
         if type.Vy[i,j] == :in
 
-            fill!(∂R∂Vx, 0.0)
-            fill!(∂R∂Vy, 0.0)
-            fill!(∂R∂Pt, 0.0)
-            fill!(∂R∂Pf, 0.0)
+            ∂R∂Vx = ad_gradient(Vx_loc -> SMomentum_y_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔP_loc, Pt0_loc, Pf0_loc, Φ0_loc, τ0_loc, G_loc, rheo_loc, D, materials, type_loc, bcv_loc, Δ), Vx_loc)
+            ∂R∂Vy = ad_gradient(Vy_loc -> SMomentum_y_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔP_loc, Pt0_loc, Pf0_loc, Φ0_loc, τ0_loc, G_loc, rheo_loc, D, materials, type_loc, bcv_loc, Δ), Vy_loc)
+            ∂R∂Pt = ad_gradient(Pt_loc -> SMomentum_y_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔP_loc, Pt0_loc, Pf0_loc, Φ0_loc, τ0_loc, G_loc, rheo_loc, D, materials, type_loc, bcv_loc, Δ), Pt_loc)
+            ∂R∂Pf = ad_gradient(Pf_loc -> SMomentum_y_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔP_loc, Pt0_loc, Pf0_loc, Φ0_loc, τ0_loc, G_loc, rheo_loc, D, materials, type_loc, bcv_loc, Δ), Pf_loc)
 
-          
-            ∂Vx, ∂Vy, ∂Pt, ∂Pf = ad_partial_gradients(SMomentum_y_Generic, (Vx_loc, Vy_loc, Pt_loc, Pf_loc), ΔP_loc, Pt0_loc, Pf0_loc, Φ0_loc, τ0_loc, G_loc, rheo_loc, D, materials, type_loc, bcv_loc, Δ)
-          
-            # ∂R∂Vx = ad_gradient(Vx_loc -> SMomentum_y_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔP_loc, Pt0_loc, Pf0_loc, Φ0_loc, τ0_loc, G_loc, rheo_loc, D, materials, type_loc, bcv_loc, Δ), Vx_loc)
-            # ∂R∂Vy = ad_gradient(Vy_loc -> SMomentum_y_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔP_loc, Pt0_loc, Pf0_loc, Φ0_loc, τ0_loc, G_loc, rheo_loc, D, materials, type_loc, bcv_loc, Δ), Vy_loc)
-            # ∂R∂Pt = ad_gradient(Pt_loc -> SMomentum_y_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔP_loc, Pt0_loc, Pf0_loc, Φ0_loc, τ0_loc, G_loc, rheo_loc, D, materials, type_loc, bcv_loc, Δ), Pt_loc)
-            # ∂R∂Pf = ad_gradient(Pf_loc -> SMomentum_y_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔP_loc, Pt0_loc, Pf0_loc, Φ0_loc, τ0_loc, G_loc, rheo_loc, D, materials, type_loc, bcv_loc, Δ), Pf_loc)
-            
-          
-            ∂R∂Vx .= ∂Vx
-            ∂R∂Vy .= ∂Vy
-            ∂R∂Pt .= ∂Pt
-            ∂R∂Pf .= ∂Pf
-
-            # Local = num.Vx[i-2:i+1,j-1:j+2] .* pattern[2][1]
             Local = SMatrix{4, 4}(num.Vx[ii, jj] for ii in i-2:i+1, jj in j-1:j+2).* pattern[2][1]
             for jj in axes(Local,2), ii in axes(Local,1)
                 if (Local[ii,jj]>0) && num.Vy[i,j]>0
@@ -813,21 +785,17 @@ function AssembleContinuity2D!(K, V, P, ΔP, old, rheo, materials, num, pattern,
     G, Ks, KΦ, Kf, ξ0, m, ρsi, ρfi, k_ηf0, n_CK = rheo
 
     shift    = (x=1, y=1)
-    ∂R∂Vx = @MMatrix zeros(2,3)
-    ∂R∂Vy = @MMatrix zeros(3,2)
-    ∂R∂Pt = @MMatrix zeros(3,3)
-    ∂R∂Pf = @MMatrix zeros(3,3)
 
     for j in 1+shift.y:nc.y+shift.y, i in 1+shift.x:nc.x+shift.x
         ρs0        = SMatrix{3,3}(     ρ0.s[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
         ρf0        = SMatrix{3,3}(     ρ0.f[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
-        Pf         = MMatrix{3,3}(      P.f[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        Pf_loc     = SMatrix{3,3}(      P.f[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
         Pf0        = SMatrix{3,3}(     P0.f[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
         Φ0         = SMatrix{3,3}(     ϕ0.c[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
-        Pt         = MMatrix{3,3}(      P.t[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        Pt_loc     = SMatrix{3,3}(      P.t[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
         Pt0        = SMatrix{3,3}(     P0.t[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
-        Vx_loc     = MMatrix{2,3}(      V.x[ii,jj] for ii in i:i+1, jj in j:j+2)
-        Vy_loc     = MMatrix{3,2}(      V.y[ii,jj] for ii in i:i+2, jj in j:j+1)
+        Vx_loc     = SMatrix{2,3}(      V.x[ii,jj] for ii in i:i+1, jj in j:j+2)
+        Vy_loc     = SMatrix{3,2}(      V.y[ii,jj] for ii in i:i+2, jj in j:j+1)
 
         typex_loc  = SMatrix{2,3}(  type.Vx[ii,jj] for ii in i:i+1, jj in j:j+2) 
         typey_loc  = SMatrix{3,2}(  type.Vy[ii,jj] for ii in i:i+2, jj in j:j+1)
@@ -848,43 +816,37 @@ function AssembleContinuity2D!(K, V, P, ΔP, old, rheo, materials, num, pattern,
         ρsi_loc    = SMatrix{3,3}(    ρsi.c[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
         ρfi_loc    = SMatrix{3,3}(    ρfi.c[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
 
-        old_loc    = (Pt = Pt0, Pf=Pf0, ϕ=Φ0, ρs=ρs0, ρf=ρf0 )
+        old_loc    = (Pt = Pt0, Pf = Pf0, ϕ = Φ0, ρs = ρs0, ρf = ρf0 )
         rheo_loc   = (Ks = Ks_loc, KΦ = KΦ_loc, Kf = Kf_loc, ξ = ξ_loc, m = m_loc, ρfi = ρfi_loc, ρsi = ρsi_loc)
 
-        ∂R∂Vx .= 0.
-        ∂R∂Vy .= 0.
-        ∂R∂Pt .= 0.
-        ∂R∂Pf .= 0.
-
-        ∂Vx, ∂Vy, ∂Pt_loc, ∂Pf_loc = ad_partial_gradients(Continuity, (Vx_loc, Vy_loc, Pt, Pf), old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ)
-        ∂R∂Vx .= ∂Vx
-        ∂R∂Vy .= ∂Vy
-        ∂R∂Pt .= ∂Pt_loc
-        ∂R∂Pf .= ∂Pf_loc
+        ∂R∂Vx = ad_gradient(Vx_loc -> Continuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ), Vx_loc)
+        ∂R∂Vy = ad_gradient(Vy_loc -> Continuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ), Vy_loc)
+        ∂R∂Pt = ad_gradient(Pt_loc -> Continuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ), Pt_loc)
+        ∂R∂Pf = ad_gradient(Pf_loc -> Continuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ), Pf_loc)
 
         # Pt --- Vx
-        Local = num.Vx[i:i+1,j:j+2] .* pattern[3][1]
+        Local = SMatrix{2, 3}(num.Vx[ii, jj] for ii in i:i+1, jj in j:j+2).* pattern[3][1]
         for jj in axes(Local,2), ii in axes(Local,1)
             if Local[ii,jj]>0 && num.Pt[i,j]>0
                 K[3][1][num.Pt[i,j], Local[ii,jj]] = ∂R∂Vx[ii,jj] 
             end
         end
         # Pt --- Vy
-        Local = num.Vy[i:i+2,j:j+1] .* pattern[3][2]
+        Local = SMatrix{3, 2}(num.Vy[ii, jj] for ii in i:i+2, jj in j:j+1).* pattern[3][2]
         for jj in axes(Local,2), ii in axes(Local,1)
             if Local[ii,jj]>0 && num.Pt[i,j]>0
                 K[3][2][num.Pt[i,j], Local[ii,jj]] = ∂R∂Vy[ii,jj] 
             end
         end
         # Pt --- Pt
-        Local = num.Pf[i-1:i+1,j-1:j+1] .* pattern[3][3]
+        Local = SMatrix{3, 3}(num.Pt[ii, jj] for ii in i-1:i+1, jj in j-1:j+1).* pattern[3][3]
         for jj in axes(Local,2), ii in axes(Local,1)
             if (Local[ii,jj]>0) && num.Pt[i,j]>0
                 K[3][3][num.Pt[i,j], Local[ii,jj]] = ∂R∂Pt[ii,jj]  
             end
         end
         # Pt --- Pf
-        Local = num.Pf[i-1:i+1,j-1:j+1] .* pattern[3][4]
+        Local = SMatrix{3, 3}(num.Pf[ii, jj] for ii in i-1:i+1, jj in j-1:j+1).* pattern[3][4]
         for jj in axes(Local,2), ii in axes(Local,1)
             if (Local[ii,jj]>0) && num.Pt[i,j]>0
                 K[3][4][num.Pt[i,j], Local[ii,jj]] = ∂R∂Pf[ii,jj]  
@@ -933,7 +895,7 @@ function ResidualFluidContinuity2D!(R, V, P, ΔP, old, rheo, materials, number, 
             ρfi_loc    = SMatrix{3,3}(    ρfi.c[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
             n_CK_loc   = SMatrix{3,3}(   n_CK.c[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
             
-            old_loc    = (Pt = Pt0, Pf=Pf0, ϕ=Φ0, ρs=ρs0, ρf=ρf0 )
+            old_loc    = (Pt = Pt0, Pf = Pf0, ϕ = Φ0, ρs = ρs0, ρf = ρf0 )
             rheo_loc   = (Ks = Ks_loc, KΦ = KΦ_loc, Kf = Kf_loc, ξ = ξ_loc, m = m_loc, ρfi = ρfi_loc, ρsi = ρsi_loc, kμ = kμ_loc, n_CK = n_CK_loc)
 
             R.pf[i,j]  = FluidContinuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ)
@@ -948,22 +910,18 @@ function AssembleFluidContinuity2D!(K, V, P, ΔP, old, rheo, materials, num, pat
     _, P0, ϕ0, ρ0 = old
     G, Ks, KΦ, Kf, ξ0, m, ρsi, ρfi, k_ηf0, n_CK = rheo
     shift    = (x=1, y=1)
-    ∂R∂Vx = @MMatrix zeros(2,3)
-    ∂R∂Vy = @MMatrix zeros(3,2)
-    ∂R∂Pt = @MMatrix zeros(3,3)
-    ∂R∂Pf = @MMatrix zeros(3,3)
 
     for j in 1+shift.y:nc.y+shift.y, i in 1+shift.x:nc.x+shift.x
-        Pt_loc     = MMatrix{3,3}(      P.t[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
-        Pf_loc     = MMatrix{3,3}(      P.f[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
-        ΔPf_loc    = MMatrix{3,3}(     ΔP.f[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        Pt_loc     = SMatrix{3,3}(      P.t[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        Pf_loc     = SMatrix{3,3}(      P.f[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        ΔPf_loc    = SMatrix{3,3}(     ΔP.f[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
         Pt0        = SMatrix{3,3}(     P0.t[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
         Pf0        = SMatrix{3,3}(     P0.f[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
         Φ0         = SMatrix{3,3}(     ϕ0.c[ii,jj] for ii in i-1:i+1, jj in j-1:j+1) 
         ρs0        = SMatrix{3,3}(     ρ0.s[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
         ρf0        = SMatrix{3,3}(     ρ0.f[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)       
-        Vx_loc     = MMatrix{2,3}(      V.x[ii,jj] for ii in i:i+1, jj in j:j+2)
-        Vy_loc     = MMatrix{3,2}(      V.y[ii,jj] for ii in i:i+2, jj in j:j+1)
+        Vx_loc     = SMatrix{2,3}(      V.x[ii,jj] for ii in i:i+1, jj in j:j+2)
+        Vy_loc     = SMatrix{3,2}(      V.y[ii,jj] for ii in i:i+2, jj in j:j+1)
         kμ_loc     = SMatrix{3,3}(  k_ηf0.c[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
         typex_loc  = SMatrix{2,3}(  type.Vx[ii,jj] for ii in i:i+1, jj in j:j+2) 
         typey_loc  = SMatrix{3,2}(  type.Vy[ii,jj] for ii in i:i+2, jj in j:j+1)
@@ -988,39 +946,34 @@ function AssembleFluidContinuity2D!(K, V, P, ΔP, old, rheo, materials, num, pat
         old_loc    = (Pt = Pt0, Pf=Pf0, ϕ=Φ0, ρs=ρs0, ρf=ρf0 )
         rheo_loc   = (Ks = Ks_loc, KΦ = KΦ_loc, Kf = Kf_loc, ξ = ξ_loc, m = m_loc, ρfi = ρfi_loc, ρsi = ρsi_loc, kμ = kμ_loc, n_CK = n_CK_loc)
 
-        ∂R∂Vx .= 0.
-        ∂R∂Vy .= 0.
-        ∂R∂Pt .= 0.
-        ∂R∂Pf .= 0.
-        ∂Vx, ∂Vy, ∂Pt, ∂Pf = ad_partial_gradients(FluidContinuity, (Vx_loc, Vy_loc, Pt_loc, Pf_loc), ΔPf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ)
-        ∂R∂Vx .= ∂Vx
-        ∂R∂Vy .= ∂Vy
-        ∂R∂Pt .= ∂Pt
-        ∂R∂Pf .= ∂Pf
+        ∂R∂Vx = ad_gradient(Vx_loc -> FluidContinuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ), Vx_loc)
+        ∂R∂Vy = ad_gradient(Vy_loc -> FluidContinuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ), Vy_loc)
+        ∂R∂Pt = ad_gradient(Pt_loc -> FluidContinuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ), Pt_loc)
+        ∂R∂Pf = ad_gradient(Pf_loc -> FluidContinuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ), Pf_loc)
              
         # Pf --- Vx
-        Local = num.Vx[i:i+1,j:j+2] .* pattern[4][1]
+        Local = SMatrix{2, 3}(num.Vx[ii, jj] for ii in i:i+1, jj in j:j+2).* pattern[4][1]
         for jj in axes(Local,2), ii in axes(Local,1)
             if Local[ii,jj]>0 && num.Pf[i,j]>0
                 K[4][1][num.Pf[i,j], Local[ii,jj]] = ∂R∂Vx[ii,jj] 
             end
         end
         # Pf --- Vy
-        Local = num.Vy[i:i+2,j:j+1] .* pattern[4][2]
+        Local = SMatrix{3, 2}(num.Vy[ii, jj] for ii in i:i+2, jj in j:j+1).* pattern[4][2]
         for jj in axes(Local,2), ii in axes(Local,1)
             if Local[ii,jj]>0 && num.Pf[i,j]>0
                 K[4][2][num.Pf[i,j], Local[ii,jj]] = ∂R∂Vy[ii,jj] 
             end
         end
         # Pf --- Pt
-        Local = num.Pt[i-1:i+1,j-1:j+1] .* pattern[4][3]
+        Local = SMatrix{3, 3}(num.Pt[ii, jj] for ii in i-1:i+1, jj in j-1:j+1).* pattern[4][3]
         for jj in axes(Local,2), ii in axes(Local,1)
             if (Local[ii,jj]>0) && num.Pf[i,j]>0
                 K[4][3][num.Pf[i,j], Local[ii,jj]] = ∂R∂Pt[ii,jj]  
             end
         end
         # Pf --- Pf
-        Local = num.Pf[i-1:i+1,j-1:j+1] .* pattern[4][4]
+        Local = SMatrix{3, 3}(num.Pf[ii, jj] for ii in i-1:i+1, jj in j-1:j+1).* pattern[4][4]
         for jj in axes(Local,2), ii in axes(Local,1)
             if (Local[ii,jj]>0) && num.Pf[i,j]>0
                 K[4][4][num.Pf[i,j], Local[ii,jj]] = ∂R∂Pf[ii,jj]  

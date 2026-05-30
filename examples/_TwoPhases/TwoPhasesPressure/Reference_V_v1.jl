@@ -382,72 +382,72 @@ end
 
         #--------------------------------------------#
 
-    #     k_ηΦ_x = materials.k_ηf0[1] .* ((Φ.c[2:end,:] .+ Φ.c[1:end-1,:]) / 2).^ materials.n_CK[1]
-    #     k_ηΦ_y = materials.k_ηf0[1] .* ((Φ.c[:,2:end] .+ Φ.c[:,1:end-1]) / 2).^ materials.n_CK[1]
+        k_ηΦ_x = materials.k_ηf0[1] .* ((Φ.c[2:end,:] .+ Φ.c[1:end-1,:]) / 2).^ materials.n_CK[1]
+        k_ηΦ_y = materials.k_ηf0[1] .* ((Φ.c[:,2:end] .+ Φ.c[:,1:end-1]) / 2).^ materials.n_CK[1]
 
-    #     Vxsc = 0.5*(V.x[1:end-1,2:end-1] + V.x[2:end,2:end-1])
-    #     Vysc = 0.5*(V.y[2:end-1,1:end-1] + V.y[2:end-1,2:end])
-    #     Vs   = (x=Vxsc, y=Vysc )
-    #     Vs_mag   = sqrt.( Vxsc.^2 .+ Vysc.^2)
-    #     Vxf  = -k_ηΦ_x .* diff(P.f, dims=1)/Δ.x
-    #     Vyf  = -k_ηΦ_y .* diff(P.f, dims=2)/Δ.y
-    #     Vxfc = 0.5*(Vxf[1:end-1,2:end-1] .+ Vxf[2:end,2:end-1])
-    #     Vyfc = 0.5*(Vyf[2:end-1,1:end-1] .+ Vyf[2:end-1,2:end])
-    #     Vf   = (x=Vxfc, y=Vyfc )
-    #     Vf_mag  = sqrt.( Vxfc.^2 .+ Vyfc.^2)
-    #     dΦdt = (Φ.c .- Φ0.c) / Δ.t
+        Vxsc = 0.5*(V.x[1:end-1,2:end-1] + V.x[2:end,2:end-1])
+        Vysc = 0.5*(V.y[2:end-1,1:end-1] + V.y[2:end-1,2:end])
+        Vs   = (x=Vxsc, y=Vysc )
+        Vs_mag   = sqrt.( Vxsc.^2 .+ Vysc.^2)
+        Vxf  = -k_ηΦ_x .* diff(P.f, dims=1)/Δ.x
+        Vyf  = -k_ηΦ_y .* diff(P.f, dims=2)/Δ.y
+        Vxfc = 0.5*(Vxf[1:end-1,2:end-1] .+ Vxf[2:end,2:end-1])
+        Vyfc = 0.5*(Vyf[2:end-1,1:end-1] .+ Vyf[2:end-1,2:end])
+        Vf   = (x=Vxfc, y=Vyfc )
+        Vf_mag  = sqrt.( Vxfc.^2 .+ Vyfc.^2)
+        dΦdt = (Φ.c .- Φ0.c) / Δ.t
         
-    #     @show τvis = norm(τ.II[inx_c,iny_c]) / sqrt(nc.x*nc.y)
-    #     @show Ptvis = norm(P.t[inx_c,iny_c]) / sqrt(nc.x*nc.y)
-    #     @show Pfvis = norm(P.f[inx_c,iny_c]) / sqrt(nc.x*nc.y)
-    #     @show Peffvis = norm(P.t[inx_c,iny_c] .- P.f[inx_c,iny_c]) / sqrt(nc.x*nc.y)
+        @show τvis = norm(τ.II[inx_c,iny_c]) / sqrt(nc.x*nc.y)
+        @show Ptvis = norm(P.t[inx_c,iny_c]) / sqrt(nc.x*nc.y)
+        @show Pfvis = norm(P.f[inx_c,iny_c]) / sqrt(nc.x*nc.y)
+        @show Peffvis = norm(P.t[inx_c,iny_c] .- P.f[inx_c,iny_c]) / sqrt(nc.x*nc.y)
 
-    #     cmap = (CairoMakie.Reverse(:matter), 1)
-    #     # cmap = :jet1
-    #     st  = 15
-    #     ind = st:st:size(xc,1)-st
+        cmap = (CairoMakie.Reverse(:matter), 1)
+        # cmap = :jet1
+        st  = 15
+        ind = st:st:size(xc,1)-st
 
-    #     fig = Figure(fontsize = 14, size = (675, 600) )  
+        fig = Figure(fontsize = 14, size = (675, 600) )  
     
-    #     ax1 = Axis(fig[3,1],  ylabel=L"$y$ [-]", xlabelsize=20, ylabelsize=20, aspect=DataAspect()) #, title=L"$V^\text{s}$"
-    #     hmVs = heatmap!(ax1, xc, yc, Vs_mag, colormap=cmap, colorrange=(0,0.75)) 
-    #     arrows2d!(ax1, xc[ind], yc[ind], Vs.x[ind,ind], Vs.y[ind,ind], lengthscale = 1e-1, color = :white)
+        ax1 = Axis(fig[3,1],  ylabel=L"$y$ [-]", xlabelsize=20, ylabelsize=20, aspect=DataAspect()) #, title=L"$V^\text{s}$"
+        hmVs = heatmap!(ax1, xc, yc, Vs_mag, colormap=cmap, colorrange=(0,0.75)) 
+        arrows2d!(ax1, xc[ind], yc[ind], Vs.x[ind,ind], Vs.y[ind,ind], lengthscale = 1e-1, color = :white)
 
-    #     ax2 = Axis(fig[3,2], xlabelsize=20, ylabelsize=20, aspect=DataAspect()) #, title=L"$V^\text{f} \times 1000$"
-    #     hmVf = heatmap!(ax2, xc, yc, Vf_mag*1000, colormap=cmap, colorrange=(0,0.2)) 
-    #     arrows2d!(ax2, xc[ind], yc[ind], Vf.x[ind,ind], Vf.y[ind,ind], lengthscale = 500, color = :white)
-    #     # arrowsize = V.arrow, lengthscale = V.scale)
+        ax2 = Axis(fig[3,2], xlabelsize=20, ylabelsize=20, aspect=DataAspect()) #, title=L"$V^\text{f} \times 1000$"
+        hmVf = heatmap!(ax2, xc, yc, Vf_mag*1000, colormap=cmap, colorrange=(0,0.2)) 
+        arrows2d!(ax2, xc[ind], yc[ind], Vf.x[ind,ind], Vf.y[ind,ind], lengthscale = 500, color = :white)
+        # arrowsize = V.arrow, lengthscale = V.scale)
 
-    #     ax2 = Axis(fig[3,3], xlabelsize=20, ylabelsize=20, aspect=DataAspect()) #, title=L"$V^\text{f} \times 1000$"
-    #     hmτ = heatmap!(ax2, xc, yc, τ.II[inx_c,iny_c], colormap=cmap) 
-    #     # arrows2d!(ax2, xc[ind], yc[ind], σ1.x[ind,ind], σ1.y[ind,ind], lengthscale = 7e-2, color = :white, tipwidth = 0)
+        ax2 = Axis(fig[3,3], xlabelsize=20, ylabelsize=20, aspect=DataAspect()) #, title=L"$V^\text{f} \times 1000$"
+        hmτ = heatmap!(ax2, xc, yc, τ.II[inx_c,iny_c], colormap=cmap) 
+        # arrows2d!(ax2, xc[ind], yc[ind], σ1.x[ind,ind], σ1.y[ind,ind], lengthscale = 7e-2, color = :white, tipwidth = 0)
 
-    #     ax1 = Axis(fig[2,1],  xlabel=L"$x$ [-]",  ylabel=L"$y$ [-]", xlabelsize=20, ylabelsize=20, aspect=DataAspect()) #, title=L"$P^\text{t}$"
-    #     hm1=heatmap!(ax1, xc, yc, P.t[inx_c,iny_c] .- mean(P.t[inx_c,iny_c]), colormap=cmap, colorrange=(-3,3)) 
-    #     # hm1=heatmap!(ax1, xc, yc, Vs.x, colormap=cmap) 
+        ax1 = Axis(fig[2,1],  xlabel=L"$x$ [-]",  ylabel=L"$y$ [-]", xlabelsize=20, ylabelsize=20, aspect=DataAspect()) #, title=L"$P^\text{t}$"
+        hm1=heatmap!(ax1, xc, yc, P.t[inx_c,iny_c] .- mean(P.t[inx_c,iny_c]), colormap=cmap, colorrange=(-3,3)) 
+        # hm1=heatmap!(ax1, xc, yc, Vs.x, colormap=cmap) 
 
-    #     ax2 = Axis(fig[2,2],  xlabel=L"$x$ [-]", xlabelsize=20, ylabelsize=20, aspect=DataAspect()) # , title=L"$P^\text{f}$"
-    #     hm2=heatmap!(ax2, xc, yc, P.f[inx_c,iny_c] .- mean(P.f[inx_c,iny_c]), colormap=cmap, colorrange=(-3,3)) 
+        ax2 = Axis(fig[2,2],  xlabel=L"$x$ [-]", xlabelsize=20, ylabelsize=20, aspect=DataAspect()) # , title=L"$P^\text{f}$"
+        hm2=heatmap!(ax2, xc, yc, P.f[inx_c,iny_c] .- mean(P.f[inx_c,iny_c]), colormap=cmap, colorrange=(-3,3)) 
         
-    #     ax3 = Axis(fig[2,3],  xlabel=L"$x$ [-]", xlabelsize=20, ylabelsize=20, aspect=DataAspect()) # , title=L"$\dot{\phi}$"
-    #     hm3=heatmap!(ax3, xc, yc, dΦdt[inx_c,iny_c]*100, colormap=cmap, colorrange=(-10.e-1, 10.e-1)) 
+        ax3 = Axis(fig[2,3],  xlabel=L"$x$ [-]", xlabelsize=20, ylabelsize=20, aspect=DataAspect()) # , title=L"$\dot{\phi}$"
+        hm3=heatmap!(ax3, xc, yc, dΦdt[inx_c,iny_c]*100, colormap=cmap, colorrange=(-10.e-1, 10.e-1)) 
 
-    #     # # contour!( ax3, xc, yc, Pe[inx_c,iny_c], levels=[0.1], color=:white)
+        # # contour!( ax3, xc, yc, Pe[inx_c,iny_c], levels=[0.1], color=:white)
         
-    #     Colorbar(fig[4,   1], hmVs, label = L"D) $|V^\text{s}|$ [-]", height=10, width = 150, labelsize = 16, ticklabelsize = 12, vertical=false, valign=true, flipaxis = false )
-    #     Colorbar(fig[4,   2], hmVf, label = L"E) $|Q^\text{f}| \times 1000$ [-]", height=10, width = 150, labelsize = 16, ticklabelsize = 12, vertical=false, valign=true, flipaxis = false )
-    #     Colorbar(fig[4,   3], hmτ,  label = L"F) $\tau_{II}$ [-]", height=10, width = 150, labelsize = 16, ticklabelsize = 12, vertical=false, valign=true, flipaxis = false )
+        Colorbar(fig[4,   1], hmVs, label = L"D) $|V^\text{s}|$ [-]", height=10, width = 150, labelsize = 16, ticklabelsize = 12, vertical=false, valign=true, flipaxis = false )
+        Colorbar(fig[4,   2], hmVf, label = L"E) $|Q^\text{f}| \times 1000$ [-]", height=10, width = 150, labelsize = 16, ticklabelsize = 12, vertical=false, valign=true, flipaxis = false )
+        Colorbar(fig[4,   3], hmτ,  label = L"F) $\tau_{II}$ [-]", height=10, width = 150, labelsize = 16, ticklabelsize = 12, vertical=false, valign=true, flipaxis = false )
 
-    #     Colorbar(fig[1, 1], hm1, label = L"A) $P^\text{t}$ [-]", height=10, width = 150, labelsize = 16, ticklabelsize = 12, vertical=false, valign=true, flipaxis = true )
-    #     Colorbar(fig[1, 2], hm2, label = L"B) $P^\text{f}$ [-]", height=10, width = 150, labelsize = 16, ticklabelsize = 12, vertical=false, valign=true, flipaxis = true )
-    #     Colorbar(fig[1, 3], hm3, label = L"C) $\dot{\phi} \times 100$ [-]", height=10, width = 150, labelsize = 16, ticklabelsize = 12, vertical=false, valign=true, flipaxis = true )
+        Colorbar(fig[1, 1], hm1, label = L"A) $P^\text{t}$ [-]", height=10, width = 150, labelsize = 16, ticklabelsize = 12, vertical=false, valign=true, flipaxis = true )
+        Colorbar(fig[1, 2], hm2, label = L"B) $P^\text{f}$ [-]", height=10, width = 150, labelsize = 16, ticklabelsize = 12, vertical=false, valign=true, flipaxis = true )
+        Colorbar(fig[1, 3], hm3, label = L"C) $\dot{\phi} \times 100$ [-]", height=10, width = 150, labelsize = 16, ticklabelsize = 12, vertical=false, valign=true, flipaxis = true )
 
-    #     display(fig)
+        display(fig)
 
-    #     probes.Pti[it]  = mean(P.t[phases.c.==2])
-    #     probes.Pfi[it]  = mean(P.f[phases.c.==2])
-    #     probes.Pei[it]  = mean(P.t[phases.c.==2] .- P.f[phases.c.==2])
-    #     probes.ΔPt[it]  = maximum(P.t) - minimum(P.t)
+        probes.Pti[it]  = mean(P.t[phases.c.==2])
+        probes.Pfi[it]  = mean(P.f[phases.c.==2])
+        probes.Pei[it]  = mean(P.t[phases.c.==2] .- P.f[phases.c.==2])
+        probes.ΔPt[it]  = maximum(P.t) - minimum(P.t)
         probes.ΔPf[it]  = maximum(P.f) - minimum(P.f)
         probes.ΔPe[it]  = maximum(P.t .- P.f) - minimum(P.t .- P.f) 
         probes.Pe[it]   = norm(P.t .- P.f)
