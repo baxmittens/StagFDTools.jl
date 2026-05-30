@@ -712,34 +712,45 @@ function AssembleMomentum2D_y!(K, V, P, ΔP, old, 𝐷, rheo, materials, num, pa
             fill!(∂R∂Pt, 0.0)
             fill!(∂R∂Pf, 0.0)
 
+          
             ∂Vx, ∂Vy, ∂Pt, ∂Pf = ad_partial_gradients(SMomentum_y_Generic, (Vx_loc, Vy_loc, Pt_loc, Pf_loc), ΔP_loc, Pt0_loc, Pf0_loc, Φ0_loc, τ0_loc, G_loc, rheo_loc, D, materials, type_loc, bcv_loc, Δ)
+          
+            # ∂R∂Vx = ad_gradient(Vx_loc -> SMomentum_y_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔP_loc, Pt0_loc, Pf0_loc, Φ0_loc, τ0_loc, G_loc, rheo_loc, D, materials, type_loc, bcv_loc, Δ), Vx_loc)
+            # ∂R∂Vy = ad_gradient(Vy_loc -> SMomentum_y_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔP_loc, Pt0_loc, Pf0_loc, Φ0_loc, τ0_loc, G_loc, rheo_loc, D, materials, type_loc, bcv_loc, Δ), Vy_loc)
+            # ∂R∂Pt = ad_gradient(Pt_loc -> SMomentum_y_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔP_loc, Pt0_loc, Pf0_loc, Φ0_loc, τ0_loc, G_loc, rheo_loc, D, materials, type_loc, bcv_loc, Δ), Pt_loc)
+            # ∂R∂Pf = ad_gradient(Pf_loc -> SMomentum_y_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔP_loc, Pt0_loc, Pf0_loc, Φ0_loc, τ0_loc, G_loc, rheo_loc, D, materials, type_loc, bcv_loc, Δ), Pf_loc)
+            
+          
             ∂R∂Vx .= ∂Vx
             ∂R∂Vy .= ∂Vy
             ∂R∂Pt .= ∂Pt
             ∂R∂Pf .= ∂Pf
 
-            Local = num.Vx[i-2:i+1,j-1:j+2] .* pattern[2][1]
+            # Local = num.Vx[i-2:i+1,j-1:j+2] .* pattern[2][1]
+            Local = SMatrix{4, 4}(num.Vx[ii, jj] for ii in i-2:i+1, jj in j-1:j+2).* pattern[2][1]
             for jj in axes(Local,2), ii in axes(Local,1)
                 if (Local[ii,jj]>0) && num.Vy[i,j]>0
                     K[2][1][num.Vy[i,j], Local[ii,jj]] = ∂R∂Vx[ii,jj] 
                 end
             end
             # Vy --- Vy
-            Local = num.Vy[i-1:i+1,j-1:j+1] .* pattern[2][2]
+            Local = SMatrix{3, 3}(num.Vy[ii, jj] for ii in i-1:i+1, jj in j-1:j+1).* pattern[2][2]
             for jj in axes(Local,2), ii in axes(Local,1)
                 if (Local[ii,jj]>0) && num.Vy[i,j]>0
                     K[2][2][num.Vy[i,j], Local[ii,jj]] = ∂R∂Vy[ii,jj]  
                 end
             end
             # Vy --- Pt
-            Local = num.Pt[i-2:i,j-1:j] .* pattern[2][3]
+            # Local = num.Pt[i-2:i,j-1:j] .* pattern[2][3]
+            Local = SMatrix{3, 2}(num.Pt[ii, jj] for ii in i-2:i, jj in j-1:j).* pattern[2][3]
             for jj in axes(Local,2), ii in axes(Local,1)
                 if (Local[ii,jj]>0) && num.Vy[i,j]>0
                     K[2][3][num.Vy[i,j], Local[ii,jj]] = ∂R∂Pt[ii,jj]  
                 end
             end 
             # Vy --- Pf
-            Local = num.Pf[i-2:i,j-1:j] .* pattern[2][4]
+            # Local = num.Pf[i-2:i,j-1:j] .* pattern[2][4]
+            Local = SMatrix{3, 2}(num.Pf[ii, jj] for ii in i-2:i, jj in j-1:j).* pattern[2][4]
             for jj in axes(Local,2), ii in axes(Local,1)
                 if (Local[ii,jj]>0) && num.Vy[i,j]>0
                     K[2][4][num.Vy[i,j], Local[ii,jj]] = ∂R∂Pf[ii,jj]  
