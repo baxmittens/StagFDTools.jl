@@ -313,33 +313,35 @@ end
 function Continuity(Vx, Vy, Pt_loc, Pf_loc, old, rheo, materials, type, bcv, Δ)
     Pt0, Pf0, Φ0, ρs0, ρf0 = old
     Ks, KΦ, Kf, ξ0, m, ρsi, ρfi = rheo
-    invΔx   = 1 / Δ.x
-    invΔy   = 1 / Δ.y
+    invΔx   = inv(Δ.x)
+    invΔy   = inv(Δ.y)
     Δt      = Δ.t
 
     # Density - currently using reference density fluid density
-    ρ0f = SMatrix{3, 3}( ρfi )    
-    ρfg = SVector(
+    ρ0f = ρfi
+    ρfg = SVector{2}(
         materials.g[2] * 0.5 * (ρ0f[2,1] + ρ0f[2,2]),
         materials.g[2] * 0.5 * (ρ0f[2,2] + ρ0f[2,3]),
     )   
     Pf   = SetBCPf1(Pf_loc, type.pf, bcv.pf, Δ, ρfg)
     Pt   = SetBCPf1(Pt_loc, type.pt, bcv.pt, Δ, ρfg)
 
-    dPtdt   = SMatrix{3, 3}( @. (Pt - Pt0) / Δt )
-    dPfdt   = SMatrix{3, 3}( @. (Pf - Pf0) / Δt )
+    dPtdt = @. (Pt - Pt0) / Δt
+    dPfdt = @. (Pf - Pf0) / Δt
     
     # !!!!!!!!!!!!!!!!!!!!!!!!!!
-    if materials.linearizeΦ ||  materials.single_phase
-        Φ       = SMatrix{3, 3}( Φ0 )
-        dΦdt    = SMatrix{3, 3}( zeros(3,3) )
+    Φ, dΦdt = if materials.linearizeΦ ||  materials.single_phase
+        Φ       = Φ0
+        dΦdt    = zeros(Φ)
+        Φ, dΦdt 
     else
         Φ       = SMatrix{3, 3}( Porosity(Φ0[ii], Pt[ii], Pf[ii], Pt0[ii], Pf0[ii], KΦ[ii], ξ0[ii], m[ii], 0., 0., Δt)[1] for ii in eachindex(Φ0) )
         dΦdt    = SMatrix{3, 3}( Porosity(Φ0[ii], Pt[ii], Pf[ii], Pt0[ii], Pf0[ii], KΦ[ii], ξ0[ii], m[ii], 0., 0., Δt)[2] for ii in eachindex(Φ0) )
+        Φ, dΦdt 
     end
 
-    dPsdt   = SMatrix{3, 3}( @. dΦdt*(Pt - Pf*Φ)/(1-Φ)^2 + (dPtdt - Φ*dPfdt - Pf*dΦdt) / (1 - Φ) )
-    dlnρsdt = SMatrix{3, 3}( @. 1/Ks * ( dPsdt ) )
+    dPsdt   = @. dΦdt*(Pt - Pf*Φ)/(1-Φ)^2 + (dPtdt - Φ*dPfdt - Pf*dΦdt) / (1 - Φ)
+    dlnρsdt = @. 1/Ks * ( dPsdt )
     # dlnρsdt = SMatrix{3, 3}( @. (1/(1-Φ) *(dPtdt - Φ*dPfdt) / Ks) ) # approximation in Yarushina's paper
 
     # Single phase
@@ -353,31 +355,31 @@ function Continuity(Vx, Vy, Pt_loc, Pf_loc, old, rheo, materials, type, bcv, Δ)
     # if materials.oneway
     #     fp      = divVs
     # else
-    if materials.conservative == false
-        if type.pt[2,2] == :p_eff
-            fp      = Pt[2,2] - Pf[2,2]
+    fp = if materials.conservative === false
+        fp = if type.pt[2,2] == :p_eff
+            Pt[2,2] - Pf[2,2]
         else
-            fp      = dlnρsdt[2,2] - dΦdt[2,2]/(1-Φ[2,2]) + divVs
+            dlnρsdt[2,2] - dΦdt[2,2] / (1 - Φ[2,2]) + divVs
         end
     else
         # Solid mass / immobile solid mass: ∂ρim∂t  + ∇⋅(q) with q = ρim⋅Vs
-        ρim0   = SMatrix{3, 3}( @. (1-Φ0) * ρs0 )
+        ρim0   = @. (1-Φ0) * ρs0
         # lnρs   = SMatrix{3, 3}( @. log(ρs0) + Δt*dlnρsdt)
         # ρs     = SMatrix{3, 3}( @. exp(lnρs) )
-        ρs     = SMatrix{3, 3}( @. ρs0 + ρs0 * Δt*dlnρsdt)
-        ρim    = SMatrix{3, 3}( @. (1-Φ ) * ρs )
+        ρs     = @. ρs0 + ρs0 * Δt*dlnρsdt
+        ρim    = @. (1-Φ ) * ρs
         ∂ρim∂t = (ρim[2,2] - ρim0[2,2]) / Δt
         # Brucite paper, Fowler (1985)
-        qx = SVector(
+        qx = SVector{2}(
             ((ρim[1,2] + ρim[2,2]) * 0.5) * Vx[1,2],
             ((ρim[2,2] + ρim[3,2]) * 0.5) * Vx[2,2],
         )
         
-        qy = SVector(
+        qy = SVector{2}(
             ((ρim[2,1] + ρim[2,2]) * 0.5) * Vy[2,1],
             ((ρim[2,2] + ρim[2,3]) * 0.5) * Vy[2,2],
         )
-        fp     = ∂ρim∂t  +  (qx[2] - qx[1]) * invΔx + (qy[2] - qy[1]) * invΔy
+        ∂ρim∂t  +  (qx[2] - qx[1]) * invΔx + (qy[2] - qy[1]) * invΔy
     end
     return fp
 end
