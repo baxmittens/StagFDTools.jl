@@ -1,4 +1,5 @@
-using JLD2, Printf, ExtendableSparse, SparseArrays, LinearAlgebra
+using JLD2, Printf, ExtendableSparse, SparseArrays, LinearAlgebra, IncompleteLU
+using IncompleteLU
 
 @views function KSP_GCR_TwoPhases_no_opt!( x::Vector{Float64}, 𝑀::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, eps::Float64, noisy::Bool, M )
     # KSP GCR solver
@@ -26,47 +27,48 @@ using JLD2, Printf, ExtendableSparse, SparseArrays, LinearAlgebra
         M.Pf.Vx M.Pf.Vy M.Pf.Pt M.Pf.Pf;
     ]
 
-    Jvv  = [M.Vx.Vx M.Vx.Vy;
+    Juu = [M.Vx.Vx M.Vx.Vy;
             M.Vy.Vx M.Vy.Vy]
-    Jvp  = [M.Vx.Pt;
+    Jup = [M.Vx.Pt;
             M.Vy.Pt]
-    Juq  = [M.Vx.Pf;
+    Juq = [M.Vx.Pf;
             M.Vy.Pf]
-    Jpv  = [M.Pt.Vx M.Pt.Vy]
-    Jpp  = M.Pt.Pt
+    Jpu = [M.Pt.Vx M.Pt.Vy]
+    Jpp = M.Pt.Pt
     Jpq = M.Pt.Pf
     Jqu = [M.Pf.Vx M.Pf.Vy]
-    Jpq = M.Pf.Pt
-    Jqq  = M.Pf.Pf
+    Jqp = M.Pf.Pt
+    Jqq = M.Pf.Pf
 
-    ndofu = size(Jvp,1)
-    ndofp = size(Jvp,2)
+    ndofu = size(Jup,1)
+    ndorp = size(Jup,2)
 
-    J̃pv    = Jpv  - Jpq*spdiagm(1 ./ diag(Jqq)) * Jqu  
-    J̃pp    = Jpp  - Jpq*spdiagm(1 ./ diag(Jqq)) * Jpq 
-    J̃vv    = Jvv  - Jvp*spdiagm(1 ./ diag(J̃pp)) * Jpv 
-    Jqq_f  = cholesky(Hermitian(SparseMatrixCSC(Jqq)), check = false  )        # Cholesky factors
-    Juu_f  = cholesky(Hermitian(SparseMatrixCSC(J̃vv)), check = false)        # Cholesky factors
+    J̃pu    = Jpu  #- Jpq*spdiagm(1 ./ diag(Jqq)) * Jqu#  - Jpu*spdiagm(1 ./ diag(Juu)) * Jup 
+    J̃pp    = Jpp  - Jpq*spdiagm(1 ./ diag(Jqq)) * Jqp # - Jpu*spdiagm(1 ./ diag(Juu)) * Jup 
+    J̃uu    = Juu  - Jup*spdiagm(1 ./ diag(Jpp)) * Jpu # - Juq*spdiagm(1 ./ diag(Jqq)) * Jqu 
+    Jqq_f  = cholesky(Hermitian(SparseMatrixCSC(Jqq)), check = false)        # Cholesky factors
+    Juu_f  = cholesky(Hermitian(SparseMatrixCSC(J̃uu)), check = false)        # Cholesky factors
     Jpp_f  = cholesky(Hermitian(SparseMatrixCSC(J̃pp)), check = false)        # Cholesky factors
   
     # Arrays for decoupled problem    
-    fu    = zeros(Float64, ndofu)
-    fp   = zeros(Float64, ndofp)
-    fq   = zeros(Float64, ndofp)
+    ru    = zeros(Float64, ndofu)
+    rp   = zeros(Float64, ndorp)
+    rq   = zeros(Float64, ndorp)
     du   = zeros(Float64, ndofu)
-    dp   = zeros(Float64, ndofp)
-    dq   = zeros(Float64, ndofp)
+    dp   = zeros(Float64, ndorp)
+    dq   = zeros(Float64, ndorp)
     r̃u   = zeros(Float64, ndofu)
-    r̃p   = zeros(Float64, ndofp)
+    r̃p   = zeros(Float64, ndorp)
+    r̃q   = zeros(Float64, ndorp)
 
     # indices
     iu = 1:ndofu
-    ip = ndofu+1:ndofu+ndofp
-    iq = ndofu+ndofp+1:length(f)
+    ip = ndofu+1:ndofu+ndorp
+    iq = ndofu+ndorp+1:length(f)
 
-    fu  .= f[iu]
-    fp  .= f[ip]
-    fq  .= f[iq]
+    ru  .= f[iu]
+    rp  .= f[ip]
+    rq  .= f[iq]
     if (noisy) @printf("       %1.4d KSP GCR Residual %1.12e %1.12e\n", 0, norm_r, norm_r/norm0); end
     
     # Solving procedure
@@ -74,11 +76,11 @@ using JLD2, Printf, ExtendableSparse, SparseArrays, LinearAlgebra
         for i1=1:restart
             # Apply preconditioner, s = PC^{-1} f
             # s .= 𝑀 \ f
-            r̃p    .= fp .- Jpq*(Jqq_f \ fq)
-            r̃u    .= fu .- Jvp*(Jpp_f \ r̃p)
+            r̃p    .= rp .- Jpq*(Jqq_f \ rq)# .- Jpu*(Juu_f \ ru)
+            r̃u    .= ru .- Jup*(Jpp_f \ r̃p)# .- Juq*(Jqq_f \ rq)
             du    .= Juu_f \  r̃u
-            dp    .= Jpp_f \ (r̃p .- J̃pv*du)
-            dq    .= Jqq_f \ (fq .- Jpq*dp .- Jqu*du)
+            dp    .= Jpp_f \ (r̃p .- J̃pu*du)
+            dq    .= Jqq_f \ (rq .- Jqp*dp .- Jqu*du)
             s[iu] .= du
             s[ip] .= dp
             s[iq] .= dq
@@ -104,11 +106,11 @@ using JLD2, Printf, ExtendableSparse, SparseArrays, LinearAlgebra
             f .-= α .* v
             # -----------------
             norm_r  = norm(f) 
-            fu   .= f[1:ndofu]
-            fp  .= f[ndofu+1:ndofu+ndofp]
-            fq  .= f[ndofu+ndofp+1:end]
-            noisy && @printf("  --> Powell-Hestenes Iteration %02d\n  Momentum res.   = %2.2e\n  Continuity 1 res. = %2.2e\n Continuity 2 res. = %2.2e\n", its, norm(fu)/sqrt(length(fu)), norm(fp)/sqrt(length(fp)), norm(fq)/sqrt(length(fq)))
-            if norm(fu)/(length(fu)) < 1e-10 && norm(fp)/(length(fp)) < 1e-10 && norm(fq)/(length(fq)) < 1e-10 #(norm_r < eps * norm0 )
+            ru   .= f[1:ndofu]
+            rp  .= f[ndofu+1:ndofu+ndorp]
+            rq  .= f[ndofu+ndorp+1:end]
+            noisy && @printf("  --> Powell-Hestenes Iteration %02d\n  Momentum res.   = %2.2e\n  Continuity 1 res. = %2.2e\n Continuity 2 res. = %2.2e\n", its, norm(ru)/sqrt(length(ru)), norm(rp)/sqrt(length(rp)), norm(rq)/sqrt(length(rq)))
+            if norm(ru)/(length(ru)) < 1e-10 && norm(rp)/(length(rp)) < 1e-10 && norm(rq)/(length(rq)) < 1e-10 #(norm_r < eps * norm0 )
                 success = 1
                 println("converged")
                 break
@@ -128,8 +130,15 @@ using JLD2, Printf, ExtendableSparse, SparseArrays, LinearAlgebra
 end
 
 function main()
-    
-    @load "data/matrix_2phases_r300_ncons.jld2"
+
+    # Load test matrix and vectors (assuming we are in the standalone/ directory or project root)
+    filepath = joinpath(@__DIR__, "../data/matrix_2phases_r300.jld2")
+    r = load(filepath, "r")
+    𝑀 = load(filepath, "𝑀")
+ 
+    # Load test preconditioner
+    filepath = joinpath(@__DIR__, "../data/matrix_2phases_r300_ncons.jld2")
+    M = load(filepath, "M")
 
     # Sparse monolithic direct 
     @info "Direct solve"

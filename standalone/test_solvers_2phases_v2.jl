@@ -1,5 +1,7 @@
 using JLD2
 
+# Assumes pt has been eliminated (if Kpp is diagonal) so the SCR is 2x2 [K̂uu K̂uq; K̂qu K̂qq]
+
 @views function KSP_GCR_Stokes!( x::Vector{Float64}, M::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, eps::Float64, noisy::Bool, Kuu::SparseMatrixCSC{Float64, Int64}, Kup::SparseMatrixCSC{Float64, Int64}, Kpu::SparseMatrixCSC{Float64, Int64}, Kpp::SparseMatrixCSC{Float64, Int64} )
     # KSP GCR solver
     norm_r, norm0 = 0.0, 0.0

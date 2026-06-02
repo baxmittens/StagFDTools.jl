@@ -2,6 +2,7 @@ using StagFDTools, JLD2
 using Printf, ExtendableSparse, SparseArrays, LinearAlgebra
 using IterativeSolvers
 using Base.Threads
+BLAS.set_num_threads(1)
 
 const KSP_RESTART = 25
 const KSP_MAXIT = 2000
@@ -19,14 +20,15 @@ has_converged(norm_r::Float64, norm0::Float64; reltol::Float64=KSP_RELTOL, absto
 # ==============================================================================
 # Custom Optimized Preconditioner for Two-Phase Flow Solver
 # ==============================================================================
-struct TwoPhasesPreconditioner{FQ, FU, FP, MJvp, MJpq, MJqu, MJpv, IndU, IndP, IndQ, VdU, VdP, VdQ, VrU, VrP, Vtmpp, Vtmpq, Vtmpq2}
+struct TwoPhasesPreconditioner{FQ, FU, FP, MJvp, MJpq, MJqp, MJqu, MJpv, IndU, IndP, IndQ, VdU, VdP, VdQ, VrU, VrP, Vtmpp, Vtmpq, Vtmpq2}
     Jqq_f::FQ
     Juu_f::FU
     Jpp_f::FP
     Jvp::MJvp
-    Jpq::MJpq
+    Jpq::MJpq 
+    Jqp::MJqp # added
     Jqu::MJqu
-    J̃pv::MJpv
+    Jpv::MJpv
     iu::IndU
     ip::IndP
     iq::IndQ
@@ -43,14 +45,15 @@ end
 function TwoPhasesPreconditioner(𝑀::SparseMatrixCSC{Float64, Int64}, M)
     VxVx = sparse(M.Vx.Vx); VxVy = sparse(M.Vx.Vy); VxPt = sparse(M.Vx.Pt)
     VyVx = sparse(M.Vy.Vx); VyVy = sparse(M.Vy.Vy); VyPt = sparse(M.Vy.Pt)
-    PtVx = sparse(M.Pt.Vx); PtVy = sparse(M.Pt.Vy); PtPt = sparse(M.Pt.Pt)
+    PtVx = sparse(M.Pt.Vx); PtVy = sparse(M.Pt.Vy); PtPt = sparse(M.Pt.Pt); PtPf = sparse(M.Pt.Pf)
     PfVx = sparse(M.Pf.Vx); PfVy = sparse(M.Pf.Vy); PfPt = sparse(M.Pf.Pt); PfPf = sparse(M.Pf.Pf)
 
     Jvv = [VxVx VxVy; VyVx VyVy]
     Jvp = [VxPt; VyPt]
     Jpv = [PtVx PtVy]
     Jpp = PtPt
-    Jpq = PfPt
+    Jpq = PtPf
+    Jqp = PfPt  # added
     Jqu = [PfVx PfVy]
     Jqq = PfPf
 
@@ -59,14 +62,14 @@ function TwoPhasesPreconditioner(𝑀::SparseMatrixCSC{Float64, Int64}, M)
     N = size(𝑀, 1)
 
     Dqq = spdiagm(0 => 1.0 ./ diag(Jqq))
-    J̃pv = Jpv - Jpq * Dqq * Jqu
-    J̃pp = Jpp - Jpq * Dqq * Jpq
+    # Jpv = Jpv # - Jpq * Dqq * Jqu # not needed
+    J̃pp = Jpp - Jpq * Dqq * Jqp
     Dpp = spdiagm(0 => 1.0 ./ diag(J̃pp))
     J̃vv = Jvv - Jvp * Dpp * Jpv
 
     Jqq_f = cholesky(Hermitian(SparseMatrixCSC(Jqq)), check=false)
     Juu_f = cholesky(Hermitian(SparseMatrixCSC(J̃vv)), check=false)
-    Jpp_f = cholesky(Hermitian(SparseMatrixCSC(J̃pp)), check=false)
+    Jpp_f = Dpp #cholesky(Hermitian(SparseMatrixCSC(J̃pp)), check=false) # PC is diagonal !
 
     iu = 1:ndofu
     ip = (ndofu + 1):(ndofu + ndofp)
@@ -82,7 +85,7 @@ function TwoPhasesPreconditioner(𝑀::SparseMatrixCSC{Float64, Int64}, M)
     tmpq2 = zeros(Float64, ndofp)
 
     return TwoPhasesPreconditioner(
-        Jqq_f, Juu_f, Jpp_f, Jvp, Jpq, Jqu, J̃pv,
+        Jqq_f, Juu_f, Jpp_f, Jvp, Jpq, Jqp, Jqu, Jpv,
         iu, ip, iq, du, dp, dq, r̃u, r̃p, tmpp, tmpq, tmpq2
     )
 end
@@ -102,17 +105,19 @@ import LinearAlgebra: ldiv!, \
     mul!(P.r̃p, P.Jpq, P.tmpq)
     @. P.r̃p = xp - P.r̃p
 
-    ldiv!(P.tmpp, P.Jpp_f, P.r̃p)
-    mul!(P.r̃u, P.Jvp, P.tmpp)
+    # ldiv!(P.tmpp, P.Jpp_f, P.r̃p) 
+    mul!(P.tmpp, P.Jpp_f, P.r̃p) # PC is diagonal !
+    mul!(P.r̃u,   P.Jvp,   P.tmpp)
     @. P.r̃u = xu - P.r̃u
 
     ldiv!(P.du, P.Juu_f, P.r̃u)
 
-    mul!(P.tmpp, P.J̃pv, P.du)
+    mul!(P.tmpp, P.Jpv, P.du)
     @. P.tmpp = P.r̃p - P.tmpp
-    ldiv!(P.dp, P.Jpp_f, P.tmpp)
+    # ldiv!(P.dp, P.Jpp_f, P.tmpp) # PC is diagonal !
+    mul!(P.dp, P.Jpp_f, P.tmpp)
 
-    mul!(P.tmpq, P.Jpq, P.dp)
+    mul!(P.tmpq,  P.Jqp, P.dp)
     mul!(P.tmpq2, P.Jqu, P.du)
     @. P.tmpq = xq - P.tmpq - P.tmpq2
     ldiv!(P.dq, P.Jqq_f, P.tmpq)
@@ -141,14 +146,15 @@ end
 @views function KSP_GCR_TwoPhases_setup(𝑀::SparseMatrixCSC{Float64, Int64}, M; restart::Int=25, maxit::Int=2000)
     VxVx = sparse(M.Vx.Vx); VxVy = sparse(M.Vx.Vy); VxPt = sparse(M.Vx.Pt)
     VyVx = sparse(M.Vy.Vx); VyVy = sparse(M.Vy.Vy); VyPt = sparse(M.Vy.Pt)
-    PtVx = sparse(M.Pt.Vx); PtVy = sparse(M.Pt.Vy); PtPt = sparse(M.Pt.Pt)
+    PtVx = sparse(M.Pt.Vx); PtVy = sparse(M.Pt.Vy); PtPt = sparse(M.Pt.Pt); PtPf = sparse(M.Pt.Pf)
     PfVx = sparse(M.Pf.Vx); PfVy = sparse(M.Pf.Vy); PfPt = sparse(M.Pf.Pt); PfPf = sparse(M.Pf.Pf)
 
     Jvv = [VxVx VxVy; VyVx VyVy]
     Jvp = [VxPt; VyPt]
     Jpv = [PtVx PtVy]
     Jpp = PtPt
-    Jpq = PfPt
+    Jpq = PtPf
+    Jqp = PfPt # added
     Jqu = [PfVx PfVy]
     Jqq = PfPf
 
@@ -157,14 +163,14 @@ end
     N = size(𝑀, 1)
 
     Dqq = spdiagm(0 => 1.0 ./ diag(Jqq))
-    J̃pv = Jpv - Jpq * Dqq * Jqu
-    J̃pp = Jpp - Jpq * Dqq * Jpq
+    # Jpv = Jpv # - Jpq * Dqq * Jqu # not needed
+    J̃pp = Jpp - Jpq * Dqq * Jqp
     Dpp = spdiagm(0 => 1.0 ./ diag(J̃pp))
     J̃vv = Jvv - Jvp * Dpp * Jpv
 
     Jqq_f = cholesky(Hermitian(SparseMatrixCSC(Jqq)), check=false)
     Juu_f = cholesky(Hermitian(SparseMatrixCSC(J̃vv)), check=false)
-    Jpp_f = cholesky(Hermitian(SparseMatrixCSC(J̃pp)), check=false)
+    Jpp_f = Dpp #cholesky(Hermitian(SparseMatrixCSC(J̃pp)), check=false) # PC is diagonal !
 
     f = zeros(Float64, N)
     v = zeros(Float64, N)
@@ -177,7 +183,7 @@ end
     iq = (ndofu + ndofp + 1):N
 
     return (;
-        A=𝑀, Jvp, Jpq, Jqu, J̃pv, Jqq_f, Juu_f, Jpp_f,
+        A=𝑀, Jvp, Jpq, Jqp, Jqu, Jpv, Jqq_f, Juu_f, Jpp_f,
         ndofu, ndofp, restart, maxit,
         f, v, s, fu=view(f, iu), fp=view(f, ip), fq=view(f, iq),
         su=view(s, iu), sp=view(s, ip), sq=view(s, iq),
@@ -193,7 +199,7 @@ end
     x::Vector{Float64}, b::Vector{Float64}, reltol::Float64, noisy::Bool, cache;
     abstol::Float64=KSP_ABSTOL
 )
-    (; A, Jvp, Jpq, Jqu, J̃pv, Jqq_f, Juu_f, Jpp_f,
+    (; A, Jvp, Jpq, Jqp, Jqu, Jpv, Jqq_f, Juu_f, Jpp_f,
         ndofu, ndofp, restart, maxit, f, v, s, fu, fp, fq, su, sp, sq, VVcols, SScols, Vnorm2,
         du, dp, dq, r̃u, r̃p, tmpp, tmpq, tmpq2) = cache
 
@@ -219,17 +225,19 @@ end
             mul!(r̃p, Jpq, tmpq)
             @. r̃p = fp - r̃p
 
-            ldiv!(tmpp, Jpp_f, r̃p)
+            # ldiv!(tmpp, Jpp_f, r̃p) 
+            mul!(tmpp, Jpp_f, r̃p) # PC is diagonal !
             mul!(r̃u, Jvp, tmpp)
             @. r̃u = fu - r̃u
 
             ldiv!(du, Juu_f, r̃u)
 
-            mul!(tmpp, J̃pv, du)
+            mul!(tmpp, Jpv, du)
             @. tmpp = r̃p - tmpp
-            ldiv!(dp, Jpp_f, tmpp)
+            # ldiv!(dp, Jpp_f, tmpp)
+            mul!(dp, Jpp_f, tmpp) # PC is diagonal !
 
-            mul!(tmpq, Jpq, dp)
+            mul!(tmpq, Jqp, dp)
             mul!(tmpq2, Jqu, du)
             @. tmpq = fq - tmpq - tmpq2
             ldiv!(dq, Jqq_f, tmpq)
@@ -424,14 +432,20 @@ end
 # ==============================================================================
 function main()
     # Load test matrix and vectors (assuming we are in the standalone/ directory or project root)
-    filepath = joinpath(@__DIR__, "matrix_2phases_r300_ncons.jld2")
+    filepath = joinpath(@__DIR__, "matrix_2phases_r50_ncons.jld2")
     if !isfile(filepath)
-        filepath = joinpath(@__DIR__, "../data/matrix_2phases_r300_ncons.jld2")
+        filepath = joinpath(@__DIR__, "../data/matrix_2phases_r300.jld2")
     end
     
     @info "Loading data from $filepath"
     r = load(filepath, "r")
     𝑀 = load(filepath, "𝑀")
+
+    # Load test preconditioner
+    filepath = joinpath(@__DIR__, "matrix_2phases_r50_ncons.jld2")
+    if !isfile(filepath)
+        filepath = joinpath(@__DIR__, "../data/matrix_2phases_r300_ncons.jld2")
+    end
     M = load(filepath, "M")
 
     # Sparse monolithic direct solve
@@ -530,6 +544,7 @@ function main()
     #     history_bicg.l, norm(x_bicg .- x_gcr))
 
     @info "nthreads = $(nthreads())"
+    @show BLAS.get_num_threads()
 end
 
 main()
