@@ -1,6 +1,7 @@
 using StagFDTools, JLD2
 using Printf, ExtendableSparse, SparseArrays, LinearAlgebra
 using IterativeSolvers
+using Base.Threads
 
 const KSP_RESTART = 25
 const KSP_MAXIT = 2000
@@ -423,9 +424,9 @@ end
 # ==============================================================================
 function main()
     # Load test matrix and vectors (assuming we are in the standalone/ directory or project root)
-    filepath = joinpath(@__DIR__, "matrix_2phases_r50.jld2")
+    filepath = joinpath(@__DIR__, "matrix_2phases_r300_ncons.jld2")
     if !isfile(filepath)
-        filepath = joinpath(@__DIR__, "data/matrix_2phases_r50.jld2")
+        filepath = joinpath(@__DIR__, "../data/matrix_2phases_r300_ncons.jld2")
     end
     
     @info "Loading data from $filepath"
@@ -434,12 +435,14 @@ function main()
     M = load(filepath, "M")
 
     # Sparse monolithic direct solve
+    @printf("\n")
     @info "--- 1. Direct Solve ---"
     x_direct = zero(r)
     @time x_direct .= 𝑀 \ r 
     @printf("Direct true residual: %.3e\n", norm(r .- 𝑀 * x_direct))
 
     # Original Custom GCR Setup and Solve (optimized)
+    @printf("\n")
     @info "--- 2. Optimized Custom GCR Solver ---"
     @time cache = KSP_GCR_TwoPhases_setup(𝑀, M)
     x_gcr = zero(r)
@@ -453,11 +456,14 @@ function main()
     @printf("GCR error vs Direct solve: %.3e\n", norm(x_gcr .- x_direct))
 
     # IterativeSolvers.jl GMRES Solve using our custom Optimized Preconditioner
-    @info "--- 3. IterativeSolvers.jl GMRES with Custom Preconditioner ---"
+    @printf("\n")
+    @info "--- PC. Custom Preconditioner ---"
     @time precond = TwoPhasesPreconditioner(𝑀, M)
     x_gmres = zero(r)
     
     # Warm up / run GMRES
+    @printf("\n")
+    @info "--- 3. IterativeSolvers.jl GMRES with Custom Preconditioner ---"
     @time begin
         # GMRES is advanced one restart cycle at a time so it uses the same true-residual
         # stopping criterion as the custom GCR solver.
@@ -478,6 +484,7 @@ function main()
     @printf("GMRES error vs GCR solve:    %.3e\n", norm(x_gmres .- x_gcr))
 
     # IterativeSolvers.jl IDR(s) Solve using our custom Optimized Preconditioner
+    @printf("\n")
     @info "--- 4. IterativeSolvers.jl IDR(s) with Custom Preconditioner ---"
     x_idrs = zero(r)
 
@@ -498,28 +505,31 @@ function main()
     @printf("IDR(%d) error vs GCR solve:    %.3e\n", history_idrs.s, norm(x_idrs .- x_gcr))
 
     # IterativeSolvers.jl BiCGStab(l) Solve using our custom Optimized Preconditioner
-    @info "--- 5. IterativeSolvers.jl BiCGStab(l) with Custom Preconditioner ---"
-    x_bicg = zero(r)
+    # @printf("\n")
+    # @info "--- 5. IterativeSolvers.jl BiCGStab(l) with Custom Preconditioner ---"
+    # x_bicg = zero(r)
 
-    @time begin
-        x_bicg, history_bicg = KSP_BICGSTABL_TwoPhases_iterativesolvers!(
-            x_bicg, 𝑀, r, precond;
-            l=KSP_BICGSTABL_L,
-            max_mv_products=KSP_MAXIT,
-            reltol,
-            abstol,
-        )
-    end
+    # @time begin
+    #     x_bicg, history_bicg = KSP_BICGSTABL_TwoPhases_iterativesolvers!(
+    #         x_bicg, 𝑀, r, precond;
+    #         l=KSP_BICGSTABL_L,
+    #         max_mv_products=KSP_MAXIT,
+    #         reltol,
+    #         abstol,
+    #     )
+    # end
 
-    @printf("BiCGStab(%d) converged: %s\n", history_bicg.l, history_bicg.isconverged)
-    @printf("BiCGStab(%d) iterations: %d, matrix-vector products: %d\n",
-        history_bicg.l, history_bicg.iters, history_bicg.mvps)
-    @printf("BiCGStab(%d) true residual: %.3e (tol %.3e)\n",
-        history_bicg.l, history_bicg.true_residual, history_bicg.tol)
-    @printf("BiCGStab(%d) error vs Direct solve: %.3e\n",
-        history_bicg.l, norm(x_bicg .- x_direct))
-    @printf("BiCGStab(%d) error vs GCR solve:    %.3e\n",
-        history_bicg.l, norm(x_bicg .- x_gcr))
+    # @printf("BiCGStab(%d) converged: %s\n", history_bicg.l, history_bicg.isconverged)
+    # @printf("BiCGStab(%d) iterations: %d, matrix-vector products: %d\n",
+    #     history_bicg.l, history_bicg.iters, history_bicg.mvps)
+    # @printf("BiCGStab(%d) true residual: %.3e (tol %.3e)\n",
+    #     history_bicg.l, history_bicg.true_residual, history_bicg.tol)
+    # @printf("BiCGStab(%d) error vs Direct solve: %.3e\n",
+    #     history_bicg.l, norm(x_bicg .- x_direct))
+    # @printf("BiCGStab(%d) error vs GCR solve:    %.3e\n",
+    #     history_bicg.l, norm(x_bicg .- x_gcr))
+
+    @info "nthreads = $(nthreads())"
 end
 
 main()
