@@ -2,7 +2,7 @@ using StagFDTools, JLD2
 using Printf, ExtendableSparse, SparseArrays, LinearAlgebra
 using IterativeSolvers
 using Base.Threads
-BLAS.set_num_threads(1)
+BLAS.set_num_threads(8)
 
 const KSP_RESTART = 25
 const KSP_MAXIT = 2000
@@ -22,7 +22,7 @@ has_converged(norm_r::Float64, norm0::Float64; reltol::Float64=KSP_RELTOL, absto
 # ==============================================================================
 struct TwoPhasesPreconditioner{FQ, FU, FP, MJvp, MJpq, MJqp, MJqu, MJpv, IndU, IndP, IndQ, VdU, VdP, VdQ, VrU, VrP, Vtmpp, Vtmpq, Vtmpq2}
     Jqq_f::FQ
-    Juu_f::FU
+    Jvv_f::FU
     Jpp_f::FP
     Jvp::MJvp
     Jpq::MJpq 
@@ -68,7 +68,7 @@ function TwoPhasesPreconditioner(𝑀::SparseMatrixCSC{Float64, Int64}, M)
     J̃vv = Jvv - Jvp * Dpp * Jpv
 
     Jqq_f = cholesky(Hermitian(SparseMatrixCSC(Jqq)), check=false)
-    Juu_f = cholesky(Hermitian(SparseMatrixCSC(J̃vv)), check=false)
+    Jvv_f = cholesky(Hermitian(SparseMatrixCSC(J̃vv)), check=false)
     Jpp_f = Dpp #cholesky(Hermitian(SparseMatrixCSC(J̃pp)), check=false) # PC is diagonal !
 
     iu = 1:ndofu
@@ -85,7 +85,7 @@ function TwoPhasesPreconditioner(𝑀::SparseMatrixCSC{Float64, Int64}, M)
     tmpq2 = zeros(Float64, ndofp)
 
     return TwoPhasesPreconditioner(
-        Jqq_f, Juu_f, Jpp_f, Jvp, Jpq, Jqp, Jqu, Jpv,
+        Jqq_f, Jvv_f, Jpp_f, Jvp, Jpq, Jqp, Jqu, Jpv,
         iu, ip, iq, du, dp, dq, r̃u, r̃p, tmpp, tmpq, tmpq2
     )
 end
@@ -110,7 +110,7 @@ import LinearAlgebra: ldiv!, \
     mul!(P.r̃u,   P.Jvp,   P.tmpp)
     @. P.r̃u = xu - P.r̃u
 
-    ldiv!(P.du, P.Juu_f, P.r̃u)
+    ldiv!(P.du, P.Jvv_f, P.r̃u)
 
     mul!(P.tmpp, P.Jpv, P.du)
     @. P.tmpp = P.r̃p - P.tmpp
@@ -144,11 +144,13 @@ end
 # Original Custom GCR Solver (from test_solvers_2phases_v3_opt.jl)
 # ==============================================================================
 @views function KSP_GCR_TwoPhases_setup(𝑀::SparseMatrixCSC{Float64, Int64}, M; restart::Int=25, maxit::Int=2000)
+
+    # Construct PC
     VxVx = sparse(M.Vx.Vx); VxVy = sparse(M.Vx.Vy); VxPt = sparse(M.Vx.Pt)
     VyVx = sparse(M.Vy.Vx); VyVy = sparse(M.Vy.Vy); VyPt = sparse(M.Vy.Pt)
     PtVx = sparse(M.Pt.Vx); PtVy = sparse(M.Pt.Vy); PtPt = sparse(M.Pt.Pt); PtPf = sparse(M.Pt.Pf)
     PfVx = sparse(M.Pf.Vx); PfVy = sparse(M.Pf.Vy); PfPt = sparse(M.Pf.Pt); PfPf = sparse(M.Pf.Pf)
-
+    
     Jvv = [VxVx VxVy; VyVx VyVy]
     Jvp = [VxPt; VyPt]
     Jpv = [PtVx PtVy]
@@ -158,19 +160,18 @@ end
     Jqu = [PfVx PfVy]
     Jqq = PfPf
 
-    ndofu = size(Jvp, 1)
-    ndofp = size(Jvp, 2)
-    N = size(𝑀, 1)
-
     Dqq = spdiagm(0 => 1.0 ./ diag(Jqq))
     # Jpv = Jpv # - Jpq * Dqq * Jqu # not needed
     J̃pp = Jpp - Jpq * Dqq * Jqp
     Dpp = spdiagm(0 => 1.0 ./ diag(J̃pp))
     J̃vv = Jvv - Jvp * Dpp * Jpv
 
-    Jqq_f = cholesky(Hermitian(SparseMatrixCSC(Jqq)), check=false)
-    Juu_f = cholesky(Hermitian(SparseMatrixCSC(J̃vv)), check=false)
-    Jpp_f = Dpp #cholesky(Hermitian(SparseMatrixCSC(J̃pp)), check=false) # PC is diagonal !
+    Jqq_f_sym = cholesky(Hermitian(SparseMatrixCSC(Jqq)), check=false)
+    Juu_f_sym = cholesky(Hermitian(SparseMatrixCSC(J̃vv)), check=false)
+
+    ndofu = size(Jvp, 1)
+    ndofp = size(Jvp, 2)
+    N     = size(𝑀, 1)
 
     f = zeros(Float64, N)
     v = zeros(Float64, N)
@@ -183,8 +184,8 @@ end
     iq = (ndofu + ndofp + 1):N
 
     return (;
-        A=𝑀, Jvp, Jpq, Jqp, Jqu, Jpv, Jqq_f, Juu_f, Jpp_f,
-        ndofu, ndofp, restart, maxit,
+        Jqq_f_sym, Juu_f_sym,
+        restart, maxit,
         f, v, s, fu=view(f, iu), fp=view(f, ip), fq=view(f, iq),
         su=view(s, iu), sp=view(s, ip), sq=view(s, iq),
         VV, SS, VVcols=[view(VV, :, i) for i in 1:restart], SScols=[view(SS, :, i) for i in 1:restart],
@@ -196,13 +197,39 @@ end
 end
 
 @views function KSP_GCR_TwoPhases_opt!(
-    x::Vector{Float64}, b::Vector{Float64}, reltol::Float64, noisy::Bool, cache;
+    x::Vector{Float64}, A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, reltol::Float64, noisy::Bool, M, cache;
     abstol::Float64=KSP_ABSTOL
 )
-    (; A, Jvp, Jpq, Jqp, Jqu, Jpv, Jqq_f, Juu_f, Jpp_f,
-        ndofu, ndofp, restart, maxit, f, v, s, fu, fp, fq, su, sp, sq, VVcols, SScols, Vnorm2,
+    (;  Jqq_f_sym, Juu_f_sym, restart, maxit, f, v, s, fu, fp, fq, su, sp, sq, VVcols, SScols, Vnorm2,
         du, dp, dq, r̃u, r̃p, tmpp, tmpq, tmpq2) = cache
 
+    # Construct PC
+    VxVx = sparse(M.Vx.Vx); VxVy = sparse(M.Vx.Vy); VxPt = sparse(M.Vx.Pt)
+    VyVx = sparse(M.Vy.Vx); VyVy = sparse(M.Vy.Vy); VyPt = sparse(M.Vy.Pt)
+    PtVx = sparse(M.Pt.Vx); PtVy = sparse(M.Pt.Vy); PtPt = sparse(M.Pt.Pt); PtPf = sparse(M.Pt.Pf)
+    PfVx = sparse(M.Pf.Vx); PfVy = sparse(M.Pf.Vy); PfPt = sparse(M.Pf.Pt); PfPf = sparse(M.Pf.Pf)
+    
+    Jvv = [VxVx VxVy; VyVx VyVy]
+    Jvp = [VxPt; VyPt]
+    Jpv = [PtVx PtVy]
+    Jpp = PtPt
+    Jpq = PtPf
+    Jqp = PfPt # added
+    Jqu = [PfVx PfVy]
+    Jqq = PfPf
+
+    Dqq = spdiagm(0 => 1.0 ./ diag(Jqq))
+    # Jpv = Jpv # - Jpq * Dqq * Jqu # not needed
+    J̃pp = Jpp - Jpq * Dqq * Jqp
+    Dpp = spdiagm(0 => 1.0 ./ diag(J̃pp))
+    J̃vv = Jvv - Jvp * Dpp * Jpv
+
+    Jqq_f = cholesky!(Jqq_f_sym, Hermitian(SparseMatrixCSC(Jqq)), check=false)
+    Jvv_f = cholesky!(Juu_f_sym, Hermitian(SparseMatrixCSC(J̃vv)), check=false)
+    Jpp_f = Dpp #cholesky(Hermitian(SparseMatrixCSC(J̃pp)), check=false) # PC is diagonal !
+    #-----------------------------------
+
+    # Initial resiual
     mul!(f, A, x)
     @. f = b - f
     norm_r = norm(f)
@@ -230,7 +257,7 @@ end
             mul!(r̃u, Jvp, tmpp)
             @. r̃u = fu - r̃u
 
-            ldiv!(du, Juu_f, r̃u)
+            ldiv!(du, Jvv_f, r̃u)
 
             mul!(tmpp, Jpv, du)
             @. tmpp = r̃p - tmpp
@@ -464,7 +491,8 @@ function main()
     abstol = KSP_ABSTOL
     noisy = false
     @printf("Convergence criterion: norm(b - A*x) <= max(%.1e, %.1e * norm0)\n", abstol, reltol)
-    @time KSP_GCR_TwoPhases_opt!(x_gcr, r, reltol, noisy, cache; abstol)
+    @show typeof(𝑀)
+    @time KSP_GCR_TwoPhases_opt!(x_gcr, 𝑀, r, reltol, noisy, M, cache; abstol)
     
     # Verify GCR difference from direct solve
     @printf("GCR error vs Direct solve: %.3e\n", norm(x_gcr .- x_direct))
