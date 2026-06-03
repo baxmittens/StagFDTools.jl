@@ -148,6 +148,12 @@ end
         Fields(ExtendableSparseMatrix(nPt, nVx), ExtendableSparseMatrix(nPt, nVy), ExtendableSparseMatrix(nPt, nPt), ExtendableSparseMatrix(nPt, nPf)),
         Fields(ExtendableSparseMatrix(nPf, nVx), ExtendableSparseMatrix(nPf, nVy), ExtendableSparseMatrix(nPf, nPt), ExtendableSparseMatrix(nPf, nPf)),
     )
+    M_PC_1 = Fields(
+        Fields(ExtendableSparseMatrix(nVx, nVx), ExtendableSparseMatrix(nVx, nVy), ExtendableSparseMatrix(nVx, nPt), ExtendableSparseMatrix(nVx, nPt)), 
+        Fields(ExtendableSparseMatrix(nVy, nVx), ExtendableSparseMatrix(nVy, nVy), ExtendableSparseMatrix(nVy, nPt), ExtendableSparseMatrix(nVy, nPt)), 
+        Fields(ExtendableSparseMatrix(nPt, nVx), ExtendableSparseMatrix(nPt, nVy), ExtendableSparseMatrix(nPt, nPt), ExtendableSparseMatrix(nPt, nPf)),
+        Fields(ExtendableSparseMatrix(nPf, nVx), ExtendableSparseMatrix(nPf, nVy), ExtendableSparseMatrix(nPf, nPt), ExtendableSparseMatrix(nPf, nPf)),
+    )
     dx   = zeros(nVx + nVy + nPt + nPf)
     r    = zeros(nVx + nVy + nPt + nPf)
     solver_cache = 0
@@ -315,8 +321,23 @@ end
             end
             
             @info "empty"
-            @time AssembleContinuity2D_test!(     M_PC, M_PC_threads, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
+            @time AssembleContinuity2D_test!(     M_PC_1, M_PC_threads, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
             # @time AssembleFluidContinuity2D_test!(M_PC, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
+
+            @show norm(M_PC.Pt.Vx .- M_PC_1.Pt.Vx)
+            @show norm(M_PC.Pt.Vy .- M_PC_1.Pt.Vy)
+            @show norm(M_PC.Pt.Pt .- M_PC_1.Pt.Pt)
+            @show norm(M_PC.Pt.Pf .- M_PC_1.Pt.Pf)
+
+            @show norm(M_PC_1.Pt.Vx)
+            @show norm(M_PC_1.Pt.Vy)
+            @show norm(M_PC_1.Pt.Pt)
+            @show norm(M_PC_1.Pt.Pf)
+
+            @show norm(M_PC.Pt.Vx)
+            @show norm(M_PC.Pt.Vy)
+            @show norm(M_PC.Pt.Pt)
+            @show norm(M_PC.Pt.Pf)
 
             @info "Solver"
             # Prepare work space (symbolic factorization)

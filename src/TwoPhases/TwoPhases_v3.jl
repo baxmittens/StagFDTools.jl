@@ -1,4 +1,4 @@
-using Base.Threads, SparseArrays, StaticArrays
+using Base.Threads, SparseArrays, StaticArrays, Atomix
 
 struct Fields{Tx,Ty,Tp,Tpf}
     Vx::Tx
@@ -1650,7 +1650,7 @@ function AssembleContinuity2D_test!(K, K_loc, V, P, ΔP, old, rheo, materials, n
     G, Ks, KΦ, Kf, ξ0, m, ρsi, ρfi, k_ηf0, n_CK = rheo
 
     shift    = (x=1, y=1)
-    
+
     Threads.@threads for j in 1+shift.y:nc.y+shift.y
         for i in 1+shift.x:nc.x+shift.x
             
@@ -1688,35 +1688,34 @@ function AssembleContinuity2D_test!(K, K_loc, V, P, ΔP, old, rheo, materials, n
             old_loc    = (Pt = Pt0, Pf = Pf0, ϕ = Φ0, ρs = ρs0, ρf = ρf0 )
             rheo_loc   = (Ks = Ks_loc, KΦ = KΦ_loc, Kf = Kf_loc, ξ = ξ_loc, m = m_loc, ρfi = ρfi_loc, ρsi = ρsi_loc)
 
-            ∂R∂Vx = ad_gradient(Vx_loc -> Continuity_test(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Vx_loc)
-            ∂R∂Vy = ad_gradient(Vy_loc -> Continuity_test(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Vy_loc)
-            ∂R∂Pt = ad_gradient(Pt_loc -> Continuity_test(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Pt_loc)
-            ∂R∂Pf = ad_gradient(Pf_loc -> Continuity_test(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Pf_loc)
+            ∂R∂Vx = ad_gradient(Vx_loc -> Continuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Vx_loc)
+            ∂R∂Vy = ad_gradient(Vy_loc -> Continuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Vy_loc)
+            ∂R∂Pt = ad_gradient(Pt_loc -> Continuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Pt_loc)
+            ∂R∂Pf = ad_gradient(Pf_loc -> Continuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Pf_loc)
 
             # Pt --- Vx
             Local = SMatrix{2, 3}(num.Vx[ii, jj] for ii in i:i+1, jj in j:j+2).* pattern[3][1]
-            for jj in axes(Local,2), ii in axes(Local,1)
+            @inbounds for jj in axes(Local,2), ii in axes(Local,1)
                 if Local[ii,jj]>0 && num.Pt[i,j]>0
                     K_loc[tid-1][3][1][num.Pt[i,j], Local[ii,jj]] = ∂R∂Vx[ii,jj] 
                 end
             end
             # Pt --- Vy
             Local = SMatrix{3, 2}(num.Vy[ii, jj] for ii in i:i+2, jj in j:j+1).* pattern[3][2]
-            for jj in axes(Local,2), ii in axes(Local,1)
+            @inbounds for jj in axes(Local,2), ii in axes(Local,1)
                 if Local[ii,jj]>0 && num.Pt[i,j]>0
                     K_loc[tid-1][3][2][num.Pt[i,j], Local[ii,jj]] = ∂R∂Vy[ii,jj] 
                 end
             end
             # Pt --- Pt
             Local = SMatrix{3, 3}(num.Pt[ii, jj] for ii in i-1:i+1, jj in j-1:j+1).* pattern[3][3]
-            for jj in axes(Local,2), ii in axes(Local,1)
+            @inbounds for jj in axes(Local,2), ii in axes(Local,1)
                 if (Local[ii,jj]>0) && num.Pt[i,j]>0
-                    # @show tid
                     K_loc[tid-1][3][3][num.Pt[i,j], Local[ii,jj]] = ∂R∂Pt[ii,jj]  
                 end
             end
             # Pt --- Pf
-            Local = SMatrix{3, 3}(num.Pf[ii, jj] for ii in i-1:i+1, jj in j-1:j+1).* pattern[3][4]
+            @inbounds Local = SMatrix{3, 3}(num.Pf[ii, jj] for ii in i-1:i+1, jj in j-1:j+1).* pattern[3][4]
             for jj in axes(Local,2), ii in axes(Local,1)
                 if (Local[ii,jj]>0) && num.Pt[i,j]>0
                     K_loc[tid-1][3][4][num.Pt[i,j], Local[ii,jj]] = ∂R∂Pf[ii,jj]  
@@ -1727,11 +1726,26 @@ function AssembleContinuity2D_test!(K, K_loc, V, P, ΔP, old, rheo, materials, n
 
     # Reduction
     for o=1:4
-        K[3][o] .= 0.0
+        A = ExtendableSparseMatrix(Float64, size(K[3][o])...)
         for k=1:nthreads()
-            K[3][o] .=  (sparse(K[3][o]) .+ sparse(K_loc[k][3][o]))
+            # @show typeof(K[3][o])
+            # @show typeof(K_loc[k][3][o])
+            A =  A + (K_loc[k][3][o])
         end
+        K[3][o] .= A
+        # droptol!(K[3][o], 1e-8)
     end
+
+    # for o=1:4
+    #     K[3][o] .= K_loc[1][3][o]
+    #     for k=2:nthreads()
+    #         # @show typeof(K[3][o])
+    #         # @show typeof(K_loc[k][3][o])
+    #         K[3][o] .= K[3][o]  .+ K_loc[1][3][o]
+    #     end
+    #     # K[3][o] .= A
+    #     # droptol!(K[3][o], 1e-8)
+    # end
 
     return nothing
 end
