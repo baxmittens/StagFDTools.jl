@@ -310,7 +310,7 @@ end
 #     return fy
 # end
 
-function Continuity(Vx, Vy, Pt_loc, Pf_loc, old, rheo, materials, type, bcv, Δ)
+function Continuity(Vx, Vy, Pt_loc, Pf_loc, old, rheo, materials, type, bcv, Δ; PC=false)
     Pt0, Pf0, Φ0, ρs0, ρf0 = old
     Ks, KΦ, Kf, ξ0, m, ρsi, ρfi = rheo
     invΔx   = inv(Δ.x)
@@ -355,7 +355,7 @@ function Continuity(Vx, Vy, Pt_loc, Pf_loc, old, rheo, materials, type, bcv, Δ)
     # if materials.oneway
     #     fp      = divVs
     # else
-    fp = if materials.conservative === false
+    fp = if materials.conservative === false || PC === true
         fp = if type.pt[2,2] == :p_eff
             Pt[2,2] - Pf[2,2]
         else
@@ -384,7 +384,7 @@ function Continuity(Vx, Vy, Pt_loc, Pf_loc, old, rheo, materials, type, bcv, Δ)
     return fp
 end
 
-function FluidContinuity(Vx, Vy, Pt_loc, Pf_loc, ΔPf_loc, old, rheo, materials, type, bcv, Δ)
+function FluidContinuity(Vx, Vy, Pt_loc, Pf_loc, ΔPf_loc, old, rheo, materials, type, bcv, Δ; PC=false)
     
     Pt0, Pf0, Φ0, ρs0, ρf0 = old
     Ks, KΦ, Kf, ξ0, m, ρsi, ρfi, kμ, n_CK = rheo
@@ -449,7 +449,7 @@ function FluidContinuity(Vx, Vy, Pt_loc, Pf_loc, ΔPf_loc, old, rheo, materials,
     divqD = ( (  qx[2] -   qx[1]) * invΔx + (  qy[2] -   qy[1]) * invΔy)
     divVs = ( (Vx[2,2] - Vx[1,2]) * invΔx + (Vy[2,2] - Vy[2,1]) * invΔy) 
     
-    fp = if materials.conservative == false
+    fp = if materials.conservative == false || PC === true
         fp = if materials.oneway
             divqD
         else
@@ -783,7 +783,7 @@ function ResidualContinuity2D!(R, V, P, ΔP, old, rheo, materials, number, type,
     return nothing
 end
 
-function AssembleContinuity2D!(K, V, P, ΔP, old, rheo, materials, num, pattern, type, BC, nc, Δ) 
+function AssembleContinuity2D!(K, V, P, ΔP, old, rheo, materials, num, pattern, type, BC, nc, Δ; PC=false) 
          
     _, P0, ϕ0, ρ0   = old
     G, Ks, KΦ, Kf, ξ0, m, ρsi, ρfi, k_ηf0, n_CK = rheo
@@ -823,10 +823,10 @@ function AssembleContinuity2D!(K, V, P, ΔP, old, rheo, materials, num, pattern,
         old_loc    = (Pt = Pt0, Pf = Pf0, ϕ = Φ0, ρs = ρs0, ρf = ρf0 )
         rheo_loc   = (Ks = Ks_loc, KΦ = KΦ_loc, Kf = Kf_loc, ξ = ξ_loc, m = m_loc, ρfi = ρfi_loc, ρsi = ρsi_loc)
 
-        ∂R∂Vx = ad_gradient(Vx_loc -> Continuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ), Vx_loc)
-        ∂R∂Vy = ad_gradient(Vy_loc -> Continuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ), Vy_loc)
-        ∂R∂Pt = ad_gradient(Pt_loc -> Continuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ), Pt_loc)
-        ∂R∂Pf = ad_gradient(Pf_loc -> Continuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ), Pf_loc)
+        ∂R∂Vx = ad_gradient(Vx_loc -> Continuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Vx_loc)
+        ∂R∂Vy = ad_gradient(Vy_loc -> Continuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Vy_loc)
+        ∂R∂Pt = ad_gradient(Pt_loc -> Continuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Pt_loc)
+        ∂R∂Pf = ad_gradient(Pf_loc -> Continuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Pf_loc)
 
         # Pt --- Vx
         Local = SMatrix{2, 3}(num.Vx[ii, jj] for ii in i:i+1, jj in j:j+2).* pattern[3][1]
@@ -909,7 +909,7 @@ function ResidualFluidContinuity2D!(R, V, P, ΔP, old, rheo, materials, number, 
     return nothing
 end
 
-function AssembleFluidContinuity2D!(K, V, P, ΔP, old, rheo, materials, num, pattern, type, BC, nc, Δ) 
+function AssembleFluidContinuity2D!(K, V, P, ΔP, old, rheo, materials, num, pattern, type, BC, nc, Δ; PC=false) 
               
     _, P0, ϕ0, ρ0 = old
     G, Ks, KΦ, Kf, ξ0, m, ρsi, ρfi, k_ηf0, n_CK = rheo
@@ -950,10 +950,10 @@ function AssembleFluidContinuity2D!(K, V, P, ΔP, old, rheo, materials, num, pat
         old_loc    = (Pt = Pt0, Pf=Pf0, ϕ=Φ0, ρs=ρs0, ρf=ρf0 )
         rheo_loc   = (Ks = Ks_loc, KΦ = KΦ_loc, Kf = Kf_loc, ξ = ξ_loc, m = m_loc, ρfi = ρfi_loc, ρsi = ρsi_loc, kμ = kμ_loc, n_CK = n_CK_loc)
 
-        ∂R∂Vx = ad_gradient(Vx_loc -> FluidContinuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ), Vx_loc)
-        ∂R∂Vy = ad_gradient(Vy_loc -> FluidContinuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ), Vy_loc)
-        ∂R∂Pt = ad_gradient(Pt_loc -> FluidContinuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ), Pt_loc)
-        ∂R∂Pf = ad_gradient(Pf_loc -> FluidContinuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ), Pf_loc)
+        ∂R∂Vx = ad_gradient(Vx_loc -> FluidContinuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Vx_loc)
+        ∂R∂Vy = ad_gradient(Vy_loc -> FluidContinuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Vy_loc)
+        ∂R∂Pt = ad_gradient(Pt_loc -> FluidContinuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Pt_loc)
+        ∂R∂Pf = ad_gradient(Pf_loc -> FluidContinuity(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔPf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Pf_loc)
              
         # Pf --- Vx
         Local = SMatrix{2, 3}(num.Vx[ii, jj] for ii in i:i+1, jj in j:j+2).* pattern[4][1]

@@ -1,11 +1,5 @@
 module StagFDTools
 
-# abstract type AbstractYield end
-# struct DruckerPrager1 <: AbstractYield end
-# struct Hyperbolic     <: AbstractYield end
-# struct GolchinMCC     <: AbstractYield end
-# export DruckerPrager1, Hyperbolic, GolchinMCC
-
 using StaticArrays, ExtendableSparse, StaticArrays, Printf, LinearAlgebra
 using DifferentiationInterface, ForwardDiff
 
@@ -22,7 +16,7 @@ include("Utils.jl")
 export GenerateGrid, printxy, av2D, Plot_Tangent_Operator
 
 include("Solvers.jl")
-export DecoupledSolver, KSP_GCR_Stokes!, mechanical_solver!, linear_tol
+export DecoupledSolver, KSP_GCR_Stokes!, mechanical_solver!, linear_tol, two_phases_mechanical_solver!, KSP_GCR_TwoPhases_setup, KSP_GCR_TwoPhases_opt! 
 
 include("BCs.jl")
 export SetBCPf1, SetBCPt1, SetBCVx1, SetBCVy1

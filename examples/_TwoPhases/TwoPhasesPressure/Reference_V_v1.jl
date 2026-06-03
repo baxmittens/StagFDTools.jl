@@ -29,7 +29,10 @@ end
 
 @views function main(nc, Ωl, Ωη)
 
-    M2Di_solver = false
+    solver      = :GCR
+    GCR_restart = 25
+    GCR_maxit   = 2000
+    GCR_tol     = 1e-8
 
     # Adimensionnal numbers
     Ωr     = 0.1             # Ratio inclusion radius / L
@@ -46,7 +49,7 @@ end
     δ      = Ωl * Ωr * L     # δ = δ/r * r/L where L = 1
     ηbi    = Ωη * ηsi        # Bulk viscosity
     k_ηΦ   = δ^2 / (ηbi + 4/3 * ηsi) # Permeability / fluid viscosity
-    r      = Ωr * L          # Inclusion radius
+    rad    = Ωr * L          # Inclusion radius
     ηs_inc = Ωηi * ηsi       # Inclusion shear viscosity
     ε̇      = Ωp * Pi / ηsi   # Background strain rate
     # Time integration
@@ -63,7 +66,7 @@ end
         compressible = true,
         linearizeΦ   = false, 
         single_phase = false,
-        conservative = false,
+        conservative = true,
         plasticity   = DruckerPrager,
     )
     materials.η0             .= [ηsi,  ηs_inc] 
@@ -138,6 +141,14 @@ end
         Fields(ExtendableSparseMatrix(nPt, nVx), ExtendableSparseMatrix(nPt, nVy), ExtendableSparseMatrix(nPt, nPt), ExtendableSparseMatrix(nPt, nPf)),
         Fields(ExtendableSparseMatrix(nPf, nVx), ExtendableSparseMatrix(nPf, nVy), ExtendableSparseMatrix(nPf, nPt), ExtendableSparseMatrix(nPf, nPf)),
     )
+    M_PC = Fields(
+        Fields(ExtendableSparseMatrix(nVx, nVx), ExtendableSparseMatrix(nVx, nVy), ExtendableSparseMatrix(nVx, nPt), ExtendableSparseMatrix(nVx, nPt)), 
+        Fields(ExtendableSparseMatrix(nVy, nVx), ExtendableSparseMatrix(nVy, nVy), ExtendableSparseMatrix(nVy, nPt), ExtendableSparseMatrix(nVy, nPt)), 
+        Fields(ExtendableSparseMatrix(nPt, nVx), ExtendableSparseMatrix(nPt, nVy), ExtendableSparseMatrix(nPt, nPt), ExtendableSparseMatrix(nPt, nPf)),
+        Fields(ExtendableSparseMatrix(nPf, nVx), ExtendableSparseMatrix(nPf, nVy), ExtendableSparseMatrix(nPf, nPt), ExtendableSparseMatrix(nPf, nPf)),
+    )
+    dx   = zeros(nVx + nVy + nPt + nPf)
+    r    = zeros(nVx + nVy + nPt + nPf)
 
     #--------------------------------------------#
     # Intialise field 
@@ -198,10 +209,10 @@ end
     ay = 1
     X_tilt = cosd(α).*Xc .- sind(α).*Yc
     Y_tilt = sind(α).*Xc .+ cosd(α).*Yc
-    phases.c[inx_c, iny_c][(X_tilt.^2 ./ax.^2 .+ (Y_tilt).^2 ./ay^2) .< r^2 ] .= 2
+    phases.c[inx_c, iny_c][(X_tilt.^2 ./ax.^2 .+ (Y_tilt).^2 ./ay^2) .< rad^2 ] .= 2
     X_tilt = cosd(α).*Xv .- sind(α).*Yv
     Y_tilt = sind(α).*Xv .+ cosd(α).*Yv
-    phases.v[inx_v, iny_v][(X_tilt.^2 ./ax.^2 .+ (Y_tilt).^2 ./ay^2) .< r^2 ] .= 2
+    phases.v[inx_v, iny_v][(X_tilt.^2 ./ax.^2 .+ (Y_tilt).^2 ./ay^2) .< rad^2 ] .= 2
 
     phase_ratios = InitialisePhaseRatios(phases, nphases)
 
@@ -231,8 +242,6 @@ end
         t   = zeros(nt),
     )
 
-    r = zeros(nVx + nVy + nPt + nPf)
-    
     for it=1:nt
 
         @printf("\nStep %04d\n", it)
@@ -273,110 +282,127 @@ end
             SetRHS!(r, R, number, type, nc)
 
             #--------------------------------------------#
-            # Assembly
+            # Assemble global Jacobian
             @info "Assembly, ndof  = $(nVx + nVy + nPt + nPf)"
             @time AssembleMomentum2D_x!(     M, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
             @time AssembleMomentum2D_y!(     M, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
             @time AssembleContinuity2D!(     M, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ)
             @time AssembleFluidContinuity2D!(M, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ)
 
-            # Two-phases operator as block matrix
-            𝑀 = [
-                M.Vx.Vx M.Vx.Vy M.Vx.Pt M.Vx.Pf;
-                M.Vy.Vx M.Vy.Vy M.Vy.Pt M.Vy.Pf;
-                M.Pt.Vx M.Pt.Vy M.Pt.Pt M.Pt.Pf;
-                M.Pf.Vx M.Pf.Vy M.Pf.Pt M.Pf.Pf;
-            ]
+            # Assemble preconditionner
+            @time AssembleMomentum2D_x!(     M_PC, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
+            @time AssembleMomentum2D_y!(     M_PC, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
+            @time AssembleContinuity2D!(     M_PC, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
+            @time AssembleFluidContinuity2D!(M_PC, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
 
-            iter==1 && save("data/matrix_2phases_r$(nc.x)_ncons.jld2", "M", M, "𝑀", 𝑀, "R", R, "r", r, "nc", nc) 
+
+            @info "Solver"
+            if solver == :LU
+                solver_cache = 0
+            elseif solver == :GCR
+                solver_cache = KSP_GCR_TwoPhases_setup( M_PC; restart=GCR_restart, maxit=GCR_maxit)
+            end
+            @time two_phases_mechanical_solver!(dx, M, r, M_PC;
+                solver=solver, solver_cache=solver_cache,
+                ηb=1e5, ϵ_l=1e-9, niter_l=10, restart=20, noisy=true
+            )
+            # # Two-phases operator as block matrix
+            # 𝑀 = [
+            #     M.Vx.Vx M.Vx.Vy M.Vx.Pt M.Vx.Pf;
+            #     M.Vy.Vx M.Vy.Vy M.Vy.Pt M.Vy.Pf;
+            #     M.Pt.Vx M.Pt.Vy M.Pt.Pt M.Pt.Pf;
+            #     M.Pf.Vx M.Pf.Vy M.Pf.Pt M.Pf.Pf;
+            # ]
+
+            # iter==1 && save("data/matrix_2phases_r$(nc.x).jld2", "M", M, "𝑀", 𝑀, "R", R, "r", r, "nc", nc) 
             
 
-            @info "System symmetry"
-            𝑀diff = 𝑀 - 𝑀'
-            dropzeros!(𝑀diff)
-            @show norm(𝑀diff)
+            # @info "System symmetry"
+            # 𝑀diff = 𝑀 - 𝑀'
+            # dropzeros!(𝑀diff)
+            # @show norm(𝑀diff)
 
             #--------------------------------------------#
 
-            if M2Di_solver == false 
-                # Direct solver 
-                @time dx = - 𝑀 \ r
-            else
-                # M2Di solver
-                fv    = -r[1:(nVx+nVy)]
-                fpt   = -r[(nVx+nVy+1):(nVx+nVy+nPt)]
-                fpf   = -r[(nVx+nVy+nPt+1):end]
-                dv    = zeros(nVx+nVy)
-                dpt   = zeros(nPt)
-                dpf   = zeros(nPf)
-                rvs   = zeros(nVx+nVy)
-                rpt   = zeros(nPt)
-                rpf   = zeros(nPf)
-                rvs_t  = zeros(nVx+nVy)
-                rpt_t = zeros(nPt)
-                s     = zeros(nPf)
-                ddv   = zeros(nVx+nVy)
-                ddpt  = zeros(nPt)
-                ddpf  = zeros(nPf)
+            # if M2Di_solver == false 
+            #     # Direct solver 
+            #     @time dx = - 𝑀 \ r
+            # else
+            #     # M2Di solver
+            #     fv    = -r[1:(nVx+nVy)]
+            #     fpt   = -r[(nVx+nVy+1):(nVx+nVy+nPt)]
+            #     fpf   = -r[(nVx+nVy+nPt+1):end]
+            #     dv    = zeros(nVx+nVy)
+            #     dpt   = zeros(nPt)
+            #     dpf   = zeros(nPf)
+            #     rvs   = zeros(nVx+nVy)
+            #     rpt   = zeros(nPt)
+            #     rpf   = zeros(nPf)
+            #     rvs_t  = zeros(nVx+nVy)
+            #     rpt_t = zeros(nPt)
+            #     s     = zeros(nPf)
+            #     ddv   = zeros(nVx+nVy)
+            #     ddpt  = zeros(nPt)
+            #     ddpf  = zeros(nPf)
 
-                Jvv  = [M.Vx.Vx M.Vx.Vy;
-                        M.Vy.Vx M.Vy.Vy]
-                Jvp  = [M.Vx.Pt;
-                        M.Vy.Pt]
-                Jpv  = [M.Pt.Vx M.Pt.Vy]
-                Jpp  = M.Pt.Pt
-                Jppf = M.Pt.Pf
-                Jpfv = [M.Pf.Vx M.Pf.Vy]
-                Jpfp = M.Pf.Pt
-                Jpf  = M.Pf.Pf
-                Kvv  = Jvv
+            #     Jvv  = [M.Vx.Vx M.Vx.Vy;
+            #             M.Vy.Vx M.Vy.Vy]
+            #     Jvp  = [M.Vx.Pt;
+            #             M.Vy.Pt]
+            #     Jpv  = [M.Pt.Vx M.Pt.Vy]
+            #     Jpp  = M.Pt.Pt
+            #     Jppf = M.Pt.Pf
+            #     Jpfv = [M.Pf.Vx M.Pf.Vy]
+            #     Jpfp = M.Pf.Pt
+            #     Jpf  = M.Pf.Pf
+            #     Kvv  = Jvv
 
-                @time begin 
-                    # γ = 1e-8
-                    # Γ = spdiagm(γ*ones(nPt))
-                    # Pre-conditionning (~Jacobi)
-                    Jpv_t  = Jpv  - Jppf*spdiagm(1 ./ diag(Jpf  ))*Jpfv  
-                    Jpp_t  = Jpp  - Jppf*spdiagm(1 ./ diag(Jpf  ))*Jpfp  #.+ Γ
-                    Jvv_t  = Kvv  - Jvp *spdiagm(1 ./ diag(Jpp_t))*Jpv 
-                    Jpf_h  = cholesky(Hermitian(SparseMatrixCSC(Jpf)), check = false  )        # Cholesky factors
-                    Jvv_th = cholesky(Hermitian(SparseMatrixCSC(Jvv_t)), check = false)        # Cholesky factors
-                    Jpp_th = spdiagm(1 ./diag(Jpp_t));             # trivial inverse
-                    nrvs0, nrpt0, nrpf0 = 1.0, 1.0, 1.0
-                    @views for itPH=1:30
-                        rvs   .= -( Jvv*dv  + Jvp*dpt             - fv  )
-                        rpt   .= -( Jpv*dv  + Jpp*dpt  + Jppf*dpf - fpt )
-                        rpf   .= -( Jpfv*dv + Jpfp*dpt + Jpf*dpf  - fpf )
-                        nrvs = norm(rvs)/length(rvs); nrpt = norm(rpt)/length(rpt);  nrpf = norm(rpf)/length(rpf)
-                        if (itPH == 1) nrvs0, nrpt0, nrpf0 = nrvs, nrpt, nrpf end
-                        @printf("  --- iteration %d --- \n",itPH);
-                        @printf("  abs. rvs = %2.2e --- rel. rvs = %2.2e\n", nrvs, nrvs/nrvs0)
-                        @printf("  abs. rpt = %2.2e --- rel. rpt = %2.2e\n", nrpt, nrpt/nrpt0)
-                        @printf("  abs. rpf = %2.2e --- rel. rpf = %2.2e\n", nrpf, nrpf/nrpf0)
-                        s     .= Jpf_h \ rpf
-                        rpt_t .= -( Jppf*s - rpt)
-                        s     .=    Jpp_th*rpt_t
-                        rvs_t .= -( Jvp*s  - rvs )
-                        ddv   .= Jvv_th \ rvs_t
-                        s     .= -( Jpv_t*ddv - rpt_t )
-                        ddpt  .=    Jpp_th*s
-                        s     .= -( Jpfp*ddpt + Jpfv*ddv - rpf )
-                        ddpf  .= Jpf_h \ s
-                        dv   .+= ddv
-                        dpt  .+= ddpt
-                        dpf  .+= ddpf
-                        # if ((norm(rvs)/length(rvs)) < tol_linv) && ((norm(rpt)/length(rpt)) < tol_linpt) && ((norm(rpf)/length(rpf)) < tol_linpf), break; end
-                        # if ((norm(rvs)/length(rvs)) > (norm(rv0)/length(rv0)) && norm(rvs)/length(rvs) < tol_glob && (norm(rpt)/length(rpt)) > (norm(rpt0)/length(rpt0)) && norm(rpt)/length(rpt) < tol_glob && (norm(rpf)/length(rpf)) > (norm(rpf0)/length(rpf0)) && norm(rpf)/length(rpf) < tol_glob),
-                        #     if noisy>=1, fprintf(' > Linear residuals do no converge further:\n'); break; end
-                        # end
-                        # rv0=rvs; rpt0=rpt; rpf0=rpf; if (itPH==nPH), nfail=nfail+1; end
-                    end
-                end
+            #     @time begin 
+            #         # γ = 1e-8
+            #         # Γ = spdiagm(γ*ones(nPt))
+            #         # Pre-conditionning (~Jacobi)
+            #         Jpv_t  = Jpv  - Jppf*spdiagm(1 ./ diag(Jpf  ))*Jpfv  
+            #         Jpp_t  = Jpp  - Jppf*spdiagm(1 ./ diag(Jpf  ))*Jpfp  #.+ Γ
+            #         Jvv_t  = Kvv  - Jvp *spdiagm(1 ./ diag(Jpp_t))*Jpv 
+            #         Jpf_h  = cholesky(Hermitian(SparseMatrixCSC(Jpf)), check = false  )        # Cholesky factors
+            #         Jvv_th = cholesky(Hermitian(SparseMatrixCSC(Jvv_t)), check = false)        # Cholesky factors
+            #         Jpp_th = spdiagm(1 ./diag(Jpp_t));             # trivial inverse
+            #         nrvs0, nrpt0, nrpf0 = 1.0, 1.0, 1.0
+            #         @views for itPH=1:30
+            #             rvs   .= -( Jvv*dv  + Jvp*dpt             - fv  )
+            #             rpt   .= -( Jpv*dv  + Jpp*dpt  + Jppf*dpf - fpt )
+            #             rpf   .= -( Jpfv*dv + Jpfp*dpt + Jpf*dpf  - fpf )
+            #             nrvs = norm(rvs)/length(rvs); nrpt = norm(rpt)/length(rpt);  nrpf = norm(rpf)/length(rpf)
+            #             if (itPH == 1) nrvs0, nrpt0, nrpf0 = nrvs, nrpt, nrpf end
+            #             @printf("  --- iteration %d --- \n",itPH);
+            #             @printf("  abs. rvs = %2.2e --- rel. rvs = %2.2e\n", nrvs, nrvs/nrvs0)
+            #             @printf("  abs. rpt = %2.2e --- rel. rpt = %2.2e\n", nrpt, nrpt/nrpt0)
+            #             @printf("  abs. rpf = %2.2e --- rel. rpf = %2.2e\n", nrpf, nrpf/nrpf0)
+            #             s     .= Jpf_h \ rpf
+            #             rpt_t .= -( Jppf*s - rpt)
+            #             s     .=    Jpp_th*rpt_t
+            #             rvs_t .= -( Jvp*s  - rvs )
+            #             ddv   .= Jvv_th \ rvs_t
+            #             s     .= -( Jpv_t*ddv - rpt_t )
+            #             ddpt  .=    Jpp_th*s
+            #             s     .= -( Jpfp*ddpt + Jpfv*ddv - rpf )
+            #             ddpf  .= Jpf_h \ s
+            #             dv   .+= ddv
+            #             dpt  .+= ddpt
+            #             dpf  .+= ddpf
+            #             # if ((norm(rvs)/length(rvs)) < tol_linv) && ((norm(rpt)/length(rpt)) < tol_linpt) && ((norm(rpf)/length(rpf)) < tol_linpf), break; end
+            #             # if ((norm(rvs)/length(rvs)) > (norm(rv0)/length(rv0)) && norm(rvs)/length(rvs) < tol_glob && (norm(rpt)/length(rpt)) > (norm(rpt0)/length(rpt0)) && norm(rpt)/length(rpt) < tol_glob && (norm(rpf)/length(rpf)) > (norm(rpf0)/length(rpf0)) && norm(rpf)/length(rpf) < tol_glob),
+            #             #     if noisy>=1, fprintf(' > Linear residuals do no converge further:\n'); break; end
+            #             # end
+            #             # rv0=rvs; rpt0=rpt; rpf0=rpf; if (itPH==nPH), nfail=nfail+1; end
+            #         end
+            #     end
                 
-                dx = zeros(nVx + nVy + nPt + nPf)
-                dx[1:(nVx+nVy)] .= dv
-                dx[(nVx+nVy+1):(nVx+nVy+nPt)] .= dpt
-                dx[(nVx+nVy+nPt+1):end] .= dpf
-            end
+            #     dx = zeros(nVx + nVy + nPt + nPf)
+            #     dx[1:(nVx+nVy)] .= dv
+            #     dx[(nVx+nVy+1):(nVx+nVy+nPt)] .= dpt
+            #     dx[(nVx+nVy+nPt+1):end] .= dpf
+            # end
 
             #--------------------------------------------#
             UpdateSolution!(V, P, dx, number, type, nc)
@@ -489,8 +515,8 @@ function Run()
 
     nc = (x=300, y=300)
 
-    nc = (x=300, y=300)
-    # nc = (x=50, y=50)
+    # nc = (x=200, y=200)
+    # nc = (x=100, y=100)
 
     # Mode 0   
     # Ωl = 10^(-1.7) # ---> δ/r
