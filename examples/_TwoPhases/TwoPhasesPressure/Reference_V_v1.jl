@@ -298,8 +298,9 @@ end
             @time AssembleContinuity2D!(     M_PC, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
             @time AssembleFluidContinuity2D!(M_PC, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
 
-            @info "empty"
-            @time AssembleFluidContinuity2D_test!(M_PC, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
+            # @info "empty"
+            # @time AssembleContinuity2D_test!(     M_PC, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
+            # @time AssembleFluidContinuity2D_test!(M_PC, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
 
             @info "Solver"
             # Prepare work space (symbolic factorization)

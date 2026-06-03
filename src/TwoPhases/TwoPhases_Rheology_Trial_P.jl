@@ -20,12 +20,13 @@ function Porosity(Φ0, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt)
 
     dΦdt, ηΦ = PorosityRate(Φ0, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt)
     Φ        = Φ0  + dΦdt * Δt
+    # Φ        = Φ0  + 1e-10
     r0       = 1.0
-    for iter=1:2
+    for iter=1:10
         r, dresdΦ = ad_value_and_derivative(PorosityResidual, Φ, Φ0, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt)
         if iter==1 r0 = abs(r) + 1e-10 end
         # @show iter, abs(r), abs(r)/r0
-        # if min(abs(r), abs(r)/r0 ) < 1e-10 break end
+        if min(abs(r), abs(r)/r0 ) < 1e-10 break end
         Φ    -=  r / dresdΦ
     end
     dΦdt, ηΦ = PorosityRate(Φ, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt)

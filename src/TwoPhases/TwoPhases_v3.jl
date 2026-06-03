@@ -1512,15 +1512,17 @@ function FluidContinuity_test(Vx, Vy, Pt_loc, Pf_loc, ΔPf_loc, old, rheo, mater
 
     dPtdt   = @. (Pt .- Pt0) / Δt
     dPfdt   = @. (Pf .- Pf0) / Δt
-    Φ, dΦdt = if materials.linearizeΦ ||  materials.single_phase
-        Φ       = Φ0
-        dΦdt    = zeros(Φ0)
-        Φ, dΦdt
-    else
-        Φ       = SMatrix{3, 3}( Porosity(Φ0[ii], Pt[ii], Pf[ii], Pt0[ii], Pf0[ii], KΦ[ii], ξ0[ii], m[ii], 0., 0., Δt)[1] for ii in eachindex(Φ0) )
-        dΦdt    = SMatrix{3, 3}( Porosity(Φ0[ii], Pt[ii], Pf[ii], Pt0[ii], Pf0[ii], KΦ[ii], ξ0[ii], m[ii], 0., 0., Δt)[2] for ii in eachindex(Φ0) )
-        Φ, dΦdt
-    end
+    Φ       = Φ0
+    dΦdt    = zero(Φ0)
+    # Φ, dΦdt = if materials.linearizeΦ ||  materials.single_phase
+    #     Φ       = Φ0
+    #     dΦdt    = zeros(Φ0)
+    #     Φ, dΦdt
+    # else
+    #     Φ       = SMatrix{3, 3}( Porosity(Φ0[ii], Pt[ii], Pf[ii], Pt0[ii], Pf0[ii], KΦ[ii], ξ0[ii], m[ii], 0., 0., Δt)[1] for ii in eachindex(Φ0) )
+    #     dΦdt    = SMatrix{3, 3}( Porosity(Φ0[ii], Pt[ii], Pf[ii], Pt0[ii], Pf0[ii], KΦ[ii], ξ0[ii], m[ii], 0., 0., Δt)[2] for ii in eachindex(Φ0) )
+    #     Φ, dΦdt
+    # end
 
     # # if Φ[1]<0 || Φ[2] <0 ||  Φ[3] <0
     # #     @show Φ
@@ -1675,3 +1677,160 @@ function AssembleFluidContinuity2D_test!(K, V, P, ΔP, old, rheo, materials, num
 end
 export AssembleFluidContinuity2D_test!
 
+
+
+function Continuity_test(Vx, Vy, Pt_loc, Pf_loc, old, rheo, materials, type, bcv, Δ; PC=false)
+    Pt0, Pf0, Φ0, ρs0, ρf0 = old
+    Ks, KΦ, Kf, ξ0, m, ρsi, ρfi = rheo
+    invΔx   = inv(Δ.x)
+    invΔy   = inv(Δ.y)
+    invΔt   = inv(Δ.t)
+
+    # Density - currently using reference density fluid density
+    ρ0f = ρfi
+    ρfg = SVector{2}(
+        materials.g[2] * 0.5 * (ρ0f[2,1] + ρ0f[2,2]),
+        materials.g[2] * 0.5 * (ρ0f[2,2] + ρ0f[2,3]),
+    )   
+    Pf   = SetBCPf1(Pf_loc, type.pf, bcv.pf, Δ, ρfg)
+    Pt   = SetBCPf1(Pt_loc, type.pt, bcv.pt, Δ, ρfg)
+
+    dPtdt = @. (Pt - Pt0) * invΔt
+    dPfdt = @. (Pf - Pf0) * invΔt
+
+    Φ       = Φ0
+    dΦdt    = Φ0 * invΔt
+    
+    # # !!!!!!!!!!!!!!!!!!!!!!!!!!
+    # Φ, dΦdt = if materials.linearizeΦ ||  materials.single_phase
+    #     Φ       = Φ0
+    #     dΦdt    = zeros(Φ)
+    #     Φ, dΦdt 
+    # else
+    #     Φ       = SMatrix{3, 3}( Porosity(Φ0[ii], Pt[ii], Pf[ii], Pt0[ii], Pf0[ii], KΦ[ii], ξ0[ii], m[ii], 0., 0., Δt)[1] for ii in eachindex(Φ0) )
+    #     dΦdt    = SMatrix{3, 3}( Porosity(Φ0[ii], Pt[ii], Pf[ii], Pt0[ii], Pf0[ii], KΦ[ii], ξ0[ii], m[ii], 0., 0., Δt)[2] for ii in eachindex(Φ0) )
+    #     Φ, dΦdt 
+    # end
+
+    dPsdt   = @. dΦdt*(Pt - Pf*Φ)/(1-Φ)^2 + (dPtdt - Φ*dPfdt - Pf*dΦdt) / (1 - Φ)
+    dlnρsdt = @. 1/Ks * ( dPsdt )
+    # dlnρsdt = SMatrix{3, 3}( @. (1/(1-Φ) *(dPtdt - Φ*dPfdt) / Ks) ) # approximation in Yarushina's paper
+
+    # Single phase
+    if materials.single_phase
+        dPsdt   = dPtdt 
+        dlnρsdt = dPsdt / Ks
+    end
+
+    divVs   = (Vx[2,2] - Vx[1,2]) * invΔx + (Vy[2,2] - Vy[2,1]) * invΔy 
+    
+    # if materials.oneway
+    #     fp      = divVs
+    # else
+    fp = if materials.conservative === false || PC === true
+        fp = if type.pt[2,2] == :p_eff
+            Pt[2,2] - Pf[2,2]
+        else
+            dlnρsdt[2,2] - dΦdt[2,2] / (1 - Φ[2,2]) + divVs
+        end
+    else
+        # Solid mass / immobile solid mass: ∂ρim∂t  + ∇⋅(q) with q = ρim⋅Vs
+        ρim0   = @. (1-Φ0) * ρs0
+        # lnρs   = SMatrix{3, 3}( @. log(ρs0) + Δt*dlnρsdt)
+        # ρs     = SMatrix{3, 3}( @. exp(lnρs) )
+        ρs     = @. ρs0 + ρs0 * Δt*dlnρsdt
+        ρim    = @. (1-Φ ) * ρs
+        ∂ρim∂t = (ρim[2,2] - ρim0[2,2]) * invΔt
+        # Brucite paper, Fowler (1985)
+        qx = SVector{2}(
+            ((ρim[1,2] + ρim[2,2]) * 0.5) * Vx[1,2],
+            ((ρim[2,2] + ρim[3,2]) * 0.5) * Vx[2,2],
+        )
+        
+        qy = SVector{2}(
+            ((ρim[2,1] + ρim[2,2]) * 0.5) * Vy[2,1],
+            ((ρim[2,2] + ρim[2,3]) * 0.5) * Vy[2,2],
+        )
+        ∂ρim∂t  +  (qx[2] - qx[1]) * invΔx + (qy[2] - qy[1]) * invΔy
+    end
+    return fp
+end
+
+
+function AssembleContinuity2D_test!(K, V, P, ΔP, old, rheo, materials, num, pattern, type, BC, nc, Δ; PC=false) 
+         
+    _, P0, ϕ0, ρ0   = old
+    G, Ks, KΦ, Kf, ξ0, m, ρsi, ρfi, k_ηf0, n_CK = rheo
+
+    shift    = (x=1, y=1)
+
+    for j in 1+shift.y:nc.y+shift.y, i in 1+shift.x:nc.x+shift.x
+        ρs0        = SMatrix{3,3}(     ρ0.s[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        ρf0        = SMatrix{3,3}(     ρ0.f[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        Pf_loc     = SMatrix{3,3}(      P.f[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        Pf0        = SMatrix{3,3}(     P0.f[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        Φ0         = SMatrix{3,3}(     ϕ0.c[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        Pt_loc     = SMatrix{3,3}(      P.t[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        Pt0        = SMatrix{3,3}(     P0.t[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        Vx_loc     = SMatrix{2,3}(      V.x[ii,jj] for ii in i:i+1, jj in j:j+2)
+        Vy_loc     = SMatrix{3,2}(      V.y[ii,jj] for ii in i:i+2, jj in j:j+1)
+
+        typex_loc  = SMatrix{2,3}(  type.Vx[ii,jj] for ii in i:i+1, jj in j:j+2) 
+        typey_loc  = SMatrix{3,2}(  type.Vy[ii,jj] for ii in i:i+2, jj in j:j+1)
+        typept_loc = SMatrix{3,3}(  type.Pt[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        typepf_loc = SMatrix{3,3}(  type.Pf[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        bcx_loc    = SMatrix{2,3}(    BC.Vx[ii,jj] for ii in i:i+1, jj in j:j+2) 
+        bcy_loc    = SMatrix{3,2}(    BC.Vy[ii,jj] for ii in i:i+2, jj in j:j+1)
+        bcpt_loc   = SMatrix{3,3}(    BC.Pt[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        bcpf_loc   = SMatrix{3,3}(    BC.Pf[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        bcv_loc    = (x=bcx_loc,   y=bcy_loc,   pt=bcpt_loc,   pf=bcpf_loc)
+        type_loc   = (x=typex_loc, y=typey_loc, pt=typept_loc, pf=typepf_loc)
+
+        Ks_loc     = SMatrix{3,3}(     Ks.c[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        KΦ_loc     = SMatrix{3,3}(     KΦ.c[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        Kf_loc     = SMatrix{3,3}(     Kf.c[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        ξ_loc      = SMatrix{3,3}(     ξ0.c[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        m_loc      = SMatrix{3,3}(      m.c[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        ρsi_loc    = SMatrix{3,3}(    ρsi.c[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+        ρfi_loc    = SMatrix{3,3}(    ρfi.c[ii,jj] for ii in i-1:i+1, jj in j-1:j+1)
+
+        old_loc    = (Pt = Pt0, Pf = Pf0, ϕ = Φ0, ρs = ρs0, ρf = ρf0 )
+        rheo_loc   = (Ks = Ks_loc, KΦ = KΦ_loc, Kf = Kf_loc, ξ = ξ_loc, m = m_loc, ρfi = ρfi_loc, ρsi = ρsi_loc)
+
+        ∂R∂Vx = ad_gradient(Vx_loc -> Continuity_test(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Vx_loc)
+        ∂R∂Vy = ad_gradient(Vy_loc -> Continuity_test(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Vy_loc)
+        ∂R∂Pt = ad_gradient(Pt_loc -> Continuity_test(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Pt_loc)
+        ∂R∂Pf = ad_gradient(Pf_loc -> Continuity_test(Vx_loc, Vy_loc, Pt_loc, Pf_loc, old_loc, rheo_loc, materials, type_loc, bcv_loc, Δ; PC=PC), Pf_loc)
+
+        # Pt --- Vx
+        Local = SMatrix{2, 3}(num.Vx[ii, jj] for ii in i:i+1, jj in j:j+2).* pattern[3][1]
+        for jj in axes(Local,2), ii in axes(Local,1)
+            if Local[ii,jj]>0 && num.Pt[i,j]>0
+                K[3][1][num.Pt[i,j], Local[ii,jj]] = ∂R∂Vx[ii,jj] 
+            end
+        end
+        # Pt --- Vy
+        Local = SMatrix{3, 2}(num.Vy[ii, jj] for ii in i:i+2, jj in j:j+1).* pattern[3][2]
+        for jj in axes(Local,2), ii in axes(Local,1)
+            if Local[ii,jj]>0 && num.Pt[i,j]>0
+                K[3][2][num.Pt[i,j], Local[ii,jj]] = ∂R∂Vy[ii,jj] 
+            end
+        end
+        # Pt --- Pt
+        Local = SMatrix{3, 3}(num.Pt[ii, jj] for ii in i-1:i+1, jj in j-1:j+1).* pattern[3][3]
+        for jj in axes(Local,2), ii in axes(Local,1)
+            if (Local[ii,jj]>0) && num.Pt[i,j]>0
+                K[3][3][num.Pt[i,j], Local[ii,jj]] = ∂R∂Pt[ii,jj]  
+            end
+        end
+        # Pt --- Pf
+        Local = SMatrix{3, 3}(num.Pf[ii, jj] for ii in i-1:i+1, jj in j-1:j+1).* pattern[3][4]
+        for jj in axes(Local,2), ii in axes(Local,1)
+            if (Local[ii,jj]>0) && num.Pt[i,j]>0
+                K[3][4][num.Pt[i,j], Local[ii,jj]] = ∂R∂Pf[ii,jj]  
+            end
+        end
+    end
+    return nothing
+end
+export AssembleContinuity2D_test!
