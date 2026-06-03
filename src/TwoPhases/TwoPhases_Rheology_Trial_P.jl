@@ -1,22 +1,25 @@
+using MuladdMacro
+
 @inline mynorm(x) = sum(xi^2 for xi in x)
 
-bulk_viscosity(ϕ, η0, m) = η0*abs(ϕ)^m
+# bulk_viscosity(ϕ, η0, m) = η0*abs(ϕ)^m
+@inline bulk_viscosity(ϕ::T, η0, m) where T = iszero(m) ? T(η0) : η0*abs(ϕ)^m
 
-function PorosityRate(Φ, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt)  
+@inline function PorosityRate(Φ, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt)  
     ηΦ      = bulk_viscosity(Φ, ξ0, m)
-    dPtdt   = (Pt - Pt0) / Δt
-    dPfdt   = (Pf - Pf0) / Δt
-    dΦdt    = ((dPfdt - dPtdt)/KΦ + (Pf - Pt)/ηΦ + λ̇*sinψ) * 1
+    dPtdt   = @muladd (Pt - Pt0) / Δt
+    dPfdt   = @muladd (Pf - Pf0) / Δt
+    dΦdt    = @muladd ((dPfdt - dPtdt)/KΦ + (Pf - Pt)/ηΦ + λ̇*sinψ) * 1
     return dΦdt, ηΦ
 end
 
-function PorosityResidual(Φ, Φ0, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt) 
+@inline function PorosityResidual(Φ, Φ0, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt) 
     dΦdt = PorosityRate(Φ, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt)[1] 
-    r    = Φ - (Φ0  + dΦdt * Δt)  
+    r    = @muladd Φ - (Φ0  + dΦdt * Δt)  
     return r 
 end
 
-function Porosity(Φ0, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt) 
+@inline function Porosity(Φ0, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt) 
 
     dΦdt, ηΦ = PorosityRate(Φ0, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, λ̇, sinψ, Δt)
     Φ        = Φ0  + dΦdt * Δt
@@ -156,7 +159,7 @@ function LocalRheology_P(ε̇::SVector{N, D}, divVs, divqD, Pt0, Pf0, Φ0, mater
     α1 = materials.single_phase ? zero(D) : one(D)
 
     # Initial guess
-    η         = (η0 .* ε̇II_eff.^(1 ./ n .- 1.0 ))
+    η         = η0 * ε̇II_eff^(1 / n - 1 )
     ηve       = inv(1/η + 1/(G*Δ.t))
     τII       = 2*ηve*ε̇II_eff
     ηvep      = ηve
@@ -189,6 +192,7 @@ function LocalRheology_P(ε̇::SVector{N, D}, divVs, divqD, Pt0, Pf0, Φ0, mater
     f  = F(τII, Pt, Pf, Φ, C, cosϕ, sinϕ, λ̇, ηvp, α1)
 
     x = @SVector [τII, Pt, Pf, λ̇]
+    plastic_correction = false
 
     nr   = 1.0
     nr0  = 1.0
@@ -196,6 +200,7 @@ function LocalRheology_P(ε̇::SVector{N, D}, divVs, divqD, Pt0, Pf0, Φ0, mater
 
     # Return mapping
     if f > D(-1e-13)
+        plastic_correction = true
         # This is the proper return mapping with plasticity
         for iter=1:10
             R, J = ad_value_and_jacobian(residual_two_phase_P, x, ηve, Δ.t, ε̇II_eff, Pt, Pf, divVs, divqD, Φ, Pt0, Pf0, Φ0, ηΦ, m, KΦ, Ks, Kf, C, cosϕ, sinϕ, sinψ, ηvp, materials.single_phase)
@@ -213,6 +218,8 @@ function LocalRheology_P(ε̇::SVector{N, D}, divVs, divqD, Pt0, Pf0, Φ0, mater
 
     Φ = if materials.single_phase
         zero(D)
+    elseif !plastic_correction
+        Φ
     else
         Porosity(Φ0, Pt, Pf, Pt0, Pf0, KΦ, ηΦ, m, λ̇, sinψ, Δ.t)[1]
     end
@@ -335,7 +342,8 @@ function TangentOperator!(𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, V, P, ΔP, P0
         # Darcy flux
         k_μ_xx  = SMatrix{3,3, Float64}( @.  k_ηf0_loc * max.(Φ_loc, 1e-6).^n_loc  )
         kx_μ_xx = SVector{2, Float64}( @. (k_μ_xx[i,2] + k_μ_xx[i+1,2]) / 2 for i=1:2 )
-        k_μ_yy  = SMatrix{3,3, Float64}( @.  k_ηf0_loc * max.(Φ_loc, 1e-6).^n_loc  )
+        k_μ_yy  = k_μ_xx
+        # k_μ_yy  = SMatrix{3,3, Float64}( @.  k_ηf0_loc * max.(Φ_loc, 1e-6).^n_loc  )
         ky_μ_yy = SVector{2, Float64}( @. (k_μ_yy[2,j] + k_μ_yy[2,j+1]) / 2 for j=1:2 )
         ∂Pf∂x   = SVector{2, Float64}( @. (Pf[i+1,2] - Pf[i,2] ) / Δ.x for i=1:2 )
         ∂Pf∂y   = SVector{2, Float64}( @. (Pf[2,j+1] - Pf[2,j] ) / Δ.y for j=1:2 )
