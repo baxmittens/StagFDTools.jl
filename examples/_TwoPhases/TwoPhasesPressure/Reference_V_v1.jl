@@ -1,5 +1,6 @@
-using StagFDTools, StagFDTools.TwoPhases, ExtendableSparse, StaticArrays, CairoMakie, LinearAlgebra, SparseArrays, Printf, JLD2
+using StagFDTools, Base.Threads, StagFDTools.TwoPhases, ExtendableSparse, StaticArrays, CairoMakie, LinearAlgebra, SparseArrays, Printf, JLD2
 import Statistics:mean
+using TimerOutputs
 
 let 
 
@@ -151,6 +152,15 @@ end
     r    = zeros(nVx + nVy + nPt + nPf)
     solver_cache = 0
 
+    # Parallel storage
+    M_PC_threads = [Fields(
+        Fields(ExtendableSparseMatrix(nVx, nVx), ExtendableSparseMatrix(nVx, nVy), ExtendableSparseMatrix(nVx, nPt), ExtendableSparseMatrix(nVx, nPt)), 
+        Fields(ExtendableSparseMatrix(nVy, nVx), ExtendableSparseMatrix(nVy, nVy), ExtendableSparseMatrix(nVy, nPt), ExtendableSparseMatrix(nVy, nPt)), 
+        Fields(ExtendableSparseMatrix(nPt, nVx), ExtendableSparseMatrix(nPt, nVy), ExtendableSparseMatrix(nPt, nPt), ExtendableSparseMatrix(nPt, nPf)),
+        Fields(ExtendableSparseMatrix(nPf, nVx), ExtendableSparseMatrix(nPf, nVy), ExtendableSparseMatrix(nPf, nPt), ExtendableSparseMatrix(nPf, nPf)),
+    ) for _ in 1:nthreads()]
+
+
     #--------------------------------------------#
     # Intialise field 
     L   = (x=L, y=L)
@@ -242,6 +252,7 @@ end
         Pf  = zeros(nt),
         t   = zeros(nt),
     )
+    to   = TimerOutput()
 
     for it=1:nt
 
@@ -267,12 +278,15 @@ end
             @printf("     Step %04d --- Iteration %04d\n", it, iter)
 
             # Residual check
-            @time TangentOperator!( 𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, V, P, ΔP, P0, Φ, Φ0, type, BC, materials, phases, rheo, Δ)
-            @time ResidualMomentum2D_x!(     R, V, P, ΔP, old, 𝐷, rheo, materials, number, type, BC, nc, Δ)
-            @time ResidualMomentum2D_y!(     R, V, P, ΔP, old, 𝐷, rheo, materials, number, type, BC, nc, Δ)
-            @time ResidualContinuity2D!(     R, V, P, ΔP, old,    rheo, materials, number, type, BC, nc, Δ) 
-            @time ResidualFluidContinuity2D!(R, V, P, ΔP, old,    rheo, materials, number, type, BC, nc, Δ) 
-
+            @timeit to "Tangent operator" begin
+                @time TangentOperator!( 𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, V, P, ΔP, P0, Φ, Φ0, type, BC, materials, phases, rheo, Δ)
+            end
+            @timeit to "Residual" begin
+                @time ResidualMomentum2D_x!(     R, V, P, ΔP, old, 𝐷, rheo, materials, number, type, BC, nc, Δ)
+                @time ResidualMomentum2D_y!(     R, V, P, ΔP, old, 𝐷, rheo, materials, number, type, BC, nc, Δ)
+                @time ResidualContinuity2D!(     R, V, P, ΔP, old,    rheo, materials, number, type, BC, nc, Δ) 
+                @time ResidualFluidContinuity2D!(R, V, P, ΔP, old,    rheo, materials, number, type, BC, nc, Δ) 
+            end
             @info "Residuals"
             @show norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
             @show norm(R.y[inx_Vy,iny_Vy])/sqrt(nVy)
@@ -283,23 +297,25 @@ end
             SetRHS!(r, R, number, type, nc)
 
             #--------------------------------------------#
-            # Assemble global Jacobian
-            @info "Assembly, ndof  = $(nVx + nVy + nPt + nPf)"
-            @info "Assemble Jacobian"
-            @time AssembleMomentum2D_x!(     M, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
-            @time AssembleMomentum2D_y!(     M, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
-            @time AssembleContinuity2D!(     M, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ)
-            @time AssembleFluidContinuity2D!(M, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ)
+            @timeit to "Assembly" begin
+                # Assemble global Jacobian
+                @info "Assembly, ndof  = $(nVx + nVy + nPt + nPf)"
+                @info "Assemble Jacobian"
+                @time AssembleMomentum2D_x!(     M, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
+                @time AssembleMomentum2D_y!(     M, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
+                @time AssembleContinuity2D!(     M, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ)
+                @time AssembleFluidContinuity2D!(M, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ)
 
-            # Assemble preconditionner
-            @info "Assemble PC"
-            @time AssembleMomentum2D_x!(     M_PC, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
-            @time AssembleMomentum2D_y!(     M_PC, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
-            @time AssembleContinuity2D!(     M_PC, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
-            @time AssembleFluidContinuity2D!(M_PC, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
-
-            # @info "empty"
-            # @time AssembleContinuity2D_test!(     M_PC, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
+                # Assemble preconditionner
+                @info "Assemble PC"
+                @time AssembleMomentum2D_x!(     M_PC, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
+                @time AssembleMomentum2D_y!(     M_PC, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
+                @time AssembleContinuity2D!(     M_PC, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
+                @time AssembleFluidContinuity2D!(M_PC, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
+            end
+            
+            @info "empty"
+            @time AssembleContinuity2D_test!(     M_PC, M_PC_threads, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
             # @time AssembleFluidContinuity2D_test!(M_PC, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
 
             @info "Solver"
@@ -309,10 +325,11 @@ end
             end
 
             # Sparse-direct solver
-            @time two_phases_mechanical_solver!(dx, M, r, M_PC;
-                solver=solver, solver_cache=solver_cache,
-                ηb=1e5, ϵ_l=1e-9, niter_l=10, restart=20, noisy=true
-            )
+            @timeit to "Linear solve" begin
+                two_phases_mechanical_solver!(dx, M, r, M_PC;
+                    solver=solver, solver_cache=solver_cache,
+                    ηb=1e5, ϵ_l=1e-9, niter_l=10, restart=20, noisy=true )
+            end
 
             #--------------------------------------------#
             UpdateSolution!(V, P, dx, number, type, nc)
@@ -415,6 +432,8 @@ end
     #--------------------------------------------#
     
     @show Δt0
+
+    display(to)
 
     return P, Δ, (c=xc, v=xv), (c=yc, v=yv)
 end
