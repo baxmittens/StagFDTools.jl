@@ -1650,12 +1650,7 @@ function AssembleContinuity2D_test!(K, K_loc, V, P, ΔP, old, rheo, materials, n
     G, Ks, KΦ, Kf, ξ0, m, ρsi, ρfi, k_ηf0, n_CK = rheo
 
     shift    = (x=1, y=1)
-
-    # Kpp_loc = [zero(K[3][3]) for _ in 1:nthreads()]
-    # @show size(Kpp_loc)
-
-    # A = zeros(nthreads())
-
+    
     Threads.@threads for j in 1+shift.y:nc.y+shift.y
         for i in 1+shift.x:nc.x+shift.x
             
