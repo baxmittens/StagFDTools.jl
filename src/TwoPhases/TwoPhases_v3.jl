@@ -1650,7 +1650,7 @@ function AssembleContinuity2D_test!(K, K_loc, V, P, ΔP, old, rheo, materials, n
     G, Ks, KΦ, Kf, ξ0, m, ρsi, ρfi, k_ηf0, n_CK = rheo
 
     shift    = (x=1, y=1)
-
+    
     Threads.@threads for j in 1+shift.y:nc.y+shift.y
         for i in 1+shift.x:nc.x+shift.x
             
@@ -1726,26 +1726,11 @@ function AssembleContinuity2D_test!(K, K_loc, V, P, ΔP, old, rheo, materials, n
 
     # Reduction
     for o=1:4
-        A = ExtendableSparseMatrix(Float64, size(K[3][o])...)
+        fill!( K[3][o], 0.0) # this is needed
         for k=1:nthreads()
-            # @show typeof(K[3][o])
-            # @show typeof(K_loc[k][3][o])
-            A =  A + (K_loc[k][3][o])
+            K[3][o] .=  K[3][o]  + K_loc[k][3][o]
         end
-        K[3][o] .= A
-        # droptol!(K[3][o], 1e-8)
     end
-
-    # for o=1:4
-    #     K[3][o] .= K_loc[1][3][o]
-    #     for k=2:nthreads()
-    #         # @show typeof(K[3][o])
-    #         # @show typeof(K_loc[k][3][o])
-    #         K[3][o] .= K[3][o]  .+ K_loc[1][3][o]
-    #     end
-    #     # K[3][o] .= A
-    #     # droptol!(K[3][o], 1e-8)
-    # end
 
     return nothing
 end

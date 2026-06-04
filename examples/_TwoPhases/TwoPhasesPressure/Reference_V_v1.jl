@@ -30,10 +30,13 @@ end
 
 @views function main(nc, Ωl, Ωη)
 
+    # Linear solver
     solver      = :GCR
     GCR_restart = 25
     GCR_maxit   = 2000
-    GCR_tol     = 1e-8
+
+    # Non-linear solver
+    niter       = 4
 
     # Adimensionnal numbers
     Ωr     = 0.1             # Ratio inclusion radius / L
@@ -154,19 +157,19 @@ end
         Fields(ExtendableSparseMatrix(nPt, nVx), ExtendableSparseMatrix(nPt, nVy), ExtendableSparseMatrix(nPt, nPt), ExtendableSparseMatrix(nPt, nPf)),
         Fields(ExtendableSparseMatrix(nPf, nVx), ExtendableSparseMatrix(nPf, nVy), ExtendableSparseMatrix(nPf, nPt), ExtendableSparseMatrix(nPf, nPf)),
     )
+
     dx   = zeros(nVx + nVy + nPt + nPf)
     r    = zeros(nVx + nVy + nPt + nPf)
     solver_cache = 0
 
-    # Parallel storage
-    M_PC_threads = [Fields(
-        Fields(ExtendableSparseMatrix(nVx, nVx), ExtendableSparseMatrix(nVx, nVy), ExtendableSparseMatrix(nVx, nPt), ExtendableSparseMatrix(nVx, nPt)), 
-        Fields(ExtendableSparseMatrix(nVy, nVx), ExtendableSparseMatrix(nVy, nVy), ExtendableSparseMatrix(nVy, nPt), ExtendableSparseMatrix(nVy, nPt)), 
-        Fields(ExtendableSparseMatrix(nPt, nVx), ExtendableSparseMatrix(nPt, nVy), ExtendableSparseMatrix(nPt, nPt), ExtendableSparseMatrix(nPt, nPf)),
-        Fields(ExtendableSparseMatrix(nPf, nVx), ExtendableSparseMatrix(nPf, nVy), ExtendableSparseMatrix(nPf, nPt), ExtendableSparseMatrix(nPf, nPf)),
-    ) for _ in 1:nthreads()]
-
-
+    # # Parallel storage
+    # M_PC_threads = [Fields(
+    #     Fields(ExtendableSparseMatrix(nVx, nVx), ExtendableSparseMatrix(nVx, nVy), ExtendableSparseMatrix(nVx, nPt), ExtendableSparseMatrix(nVx, nPt)), 
+    #     Fields(ExtendableSparseMatrix(nVy, nVx), ExtendableSparseMatrix(nVy, nVy), ExtendableSparseMatrix(nVy, nPt), ExtendableSparseMatrix(nVy, nPt)), 
+    #     Fields(ExtendableSparseMatrix(nPt, nVx), ExtendableSparseMatrix(nPt, nVy), ExtendableSparseMatrix(nPt, nPt), ExtendableSparseMatrix(nPt, nPf)),
+    #     Fields(ExtendableSparseMatrix(nPf, nVx), ExtendableSparseMatrix(nPf, nVy), ExtendableSparseMatrix(nPf, nPt), ExtendableSparseMatrix(nPf, nPf)),
+    # ) for _ in 1:nthreads()]
+    
     #--------------------------------------------#
     # Intialise field 
     L   = (x=L, y=L)
@@ -279,9 +282,17 @@ end
         old  = τ0, P0, Φ0, ρ0
         rheo = G, Ks, KΦ, Kf, ξ0, m, ρsi, ρfi, k_ηf0, n_CK
 
-        for iter=1:4
+        for iter=1:niter
 
             @printf("     Step %04d --- Iteration %04d\n", it, iter)
+
+            # Parallel storage
+            M_PC_threads = [Fields(
+                Fields(ExtendableSparseMatrix(nVx, nVx), ExtendableSparseMatrix(nVx, nVy), ExtendableSparseMatrix(nVx, nPt), ExtendableSparseMatrix(nVx, nPt)), 
+                Fields(ExtendableSparseMatrix(nVy, nVx), ExtendableSparseMatrix(nVy, nVy), ExtendableSparseMatrix(nVy, nPt), ExtendableSparseMatrix(nVy, nPt)), 
+                Fields(ExtendableSparseMatrix(nPt, nVx), ExtendableSparseMatrix(nPt, nVy), ExtendableSparseMatrix(nPt, nPt), ExtendableSparseMatrix(nPt, nPf)),
+                Fields(ExtendableSparseMatrix(nPf, nVx), ExtendableSparseMatrix(nPf, nVy), ExtendableSparseMatrix(nPf, nPt), ExtendableSparseMatrix(nPf, nPf)),
+            ) for _ in 1:nthreads()]
 
             # Residual check
             @timeit to "Tangent operator" begin
@@ -338,6 +349,8 @@ end
             @show norm(M_PC.Pt.Vy)
             @show norm(M_PC.Pt.Pt)
             @show norm(M_PC.Pt.Pf)
+
+            # error()
 
             @info "Solver"
             # Prepare work space (symbolic factorization)
@@ -454,6 +467,7 @@ end
     
     @show Δt0
 
+    @show nthreads()
     display(to)
 
     return P, Δ, (c=xc, v=xv), (c=yc, v=yv)
@@ -465,6 +479,7 @@ function Run()
 
     # nc = (x=200, y=200)
     # nc = (x=100, y=100)
+    # nc = (x=50, y=50)
 
     # Mode 0   
     # Ωl = 10^(-1.7) # ---> δ/r
