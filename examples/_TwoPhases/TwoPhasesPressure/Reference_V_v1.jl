@@ -286,14 +286,6 @@ end
 
             @printf("     Step %04d --- Iteration %04d\n", it, iter)
 
-            # Parallel storage
-            M_PC_threads = [Fields(
-                Fields(ExtendableSparseMatrix(nVx, nVx), ExtendableSparseMatrix(nVx, nVy), ExtendableSparseMatrix(nVx, nPt), ExtendableSparseMatrix(nVx, nPt)), 
-                Fields(ExtendableSparseMatrix(nVy, nVx), ExtendableSparseMatrix(nVy, nVy), ExtendableSparseMatrix(nVy, nPt), ExtendableSparseMatrix(nVy, nPt)), 
-                Fields(ExtendableSparseMatrix(nPt, nVx), ExtendableSparseMatrix(nPt, nVy), ExtendableSparseMatrix(nPt, nPt), ExtendableSparseMatrix(nPt, nPf)),
-                Fields(ExtendableSparseMatrix(nPf, nVx), ExtendableSparseMatrix(nPf, nVy), ExtendableSparseMatrix(nPf, nPt), ExtendableSparseMatrix(nPf, nPf)),
-            ) for _ in 1:nthreads()]
-
             # Residual check
             @timeit to "Tangent operator" begin
                 @time TangentOperator!( 𝐷, 𝐷_ctl, τ, τ0, ε̇, λ̇, η, V, P, ΔP, P0, Φ, Φ0, type, BC, materials, phases, rheo, Δ)
@@ -315,25 +307,38 @@ end
 
             #--------------------------------------------#
             @timeit to "Assembly" begin
+
                 # Assemble global Jacobian
-                @info "Assembly, ndof  = $(nVx + nVy + nPt + nPf)"
-                @info "Assemble Jacobian"
-                @time AssembleMomentum2D_x!(     M, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
-                @time AssembleMomentum2D_y!(     M, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
-                @time AssembleContinuity2D!(     M, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ)
-                @time AssembleFluidContinuity2D!(M, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ)
+                @info "Assemble Jacobian, ndof  = $(nVx + nVy + nPt + nPf)"
+                M_PC_threads = reset_parallel_storage(number)
+                @time AssembleMomentum2D_x!(     M_PC_threads, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
+                @time AssembleMomentum2D_y!(     M_PC_threads, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
+                @time AssembleContinuity2D!(     M_PC_threads, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ)
+                @time AssembleFluidContinuity2D!(M_PC_threads, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ)
+                @timeit to "Reduction" begin
+                    reduce_sparse_matrix!(M, M_PC_threads)
+                end
 
                 # Assemble preconditionner
-                @info "Assemble PC"
-                @time AssembleMomentum2D_x!(     M_PC, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
-                @time AssembleMomentum2D_y!(     M_PC, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
-                @time AssembleContinuity2D!(     M_PC, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
-                @time AssembleFluidContinuity2D!(M_PC, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
+                @info "Assemble PC, ndof  = $(nVx + nVy + nPt + nPf)"
+                M_PC_threads = reset_parallel_storage(number)
+                @time AssembleMomentum2D_x!(     M_PC_threads, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
+                @time AssembleMomentum2D_y!(     M_PC_threads, V, P, ΔP, old, 𝐷_ctl, rheo, materials, number, pattern, type, BC, nc, Δ)
+                @time AssembleContinuity2D!(     M_PC_threads, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
+                @time AssembleFluidContinuity2D!(M_PC_threads, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
+                @timeit to "Reduction" begin
+                    reduce_sparse_matrix!(M_PC, M_PC_threads)
+                end
             end
             
+
             @info "empty"
+            M_PC_threads = reset_parallel_storage(number)
             @time AssembleContinuity2D_test!(     M_PC_1, M_PC_threads, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
-            # @time AssembleFluidContinuity2D_test!(M_PC, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
+            
+            @timeit to "Reduction" begin
+                reduce_sparse_matrix!(M_PC_1, M_PC_threads)
+            end
 
             @show norm(M_PC.Pt.Vx .- M_PC_1.Pt.Vx)
             @show norm(M_PC.Pt.Vy .- M_PC_1.Pt.Vy)
