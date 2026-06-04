@@ -331,32 +331,6 @@ end
                 end
             end
             
-
-            @info "empty"
-            M_PC_threads = reset_parallel_storage(number)
-            @time AssembleContinuity2D_test!(     M_PC_1, M_PC_threads, V, P, ΔP, old,        rheo, materials, number, pattern, type, BC, nc, Δ; PC=true)
-            
-            @timeit to "Reduction" begin
-                reduce_sparse_matrix!(M_PC_1, M_PC_threads)
-            end
-
-            @show norm(M_PC.Pt.Vx .- M_PC_1.Pt.Vx)
-            @show norm(M_PC.Pt.Vy .- M_PC_1.Pt.Vy)
-            @show norm(M_PC.Pt.Pt .- M_PC_1.Pt.Pt)
-            @show norm(M_PC.Pt.Pf .- M_PC_1.Pt.Pf)
-
-            @show norm(M_PC_1.Pt.Vx)
-            @show norm(M_PC_1.Pt.Vy)
-            @show norm(M_PC_1.Pt.Pt)
-            @show norm(M_PC_1.Pt.Pf)
-
-            @show norm(M_PC.Pt.Vx)
-            @show norm(M_PC.Pt.Vy)
-            @show norm(M_PC.Pt.Pt)
-            @show norm(M_PC.Pt.Pf)
-
-            # error()
-
             @info "Solver"
             # Prepare work space (symbolic factorization)
             if iter==1 && it==1 && solver == :GCR
@@ -480,24 +454,14 @@ end
 
 function Run()
 
-    nc = (x=300, y=300)
-
+    # nc = (x=700, y=700)
+    nc = (x=300, y=300) # paper figure
     # nc = (x=200, y=200)
     # nc = (x=100, y=100)
     # nc = (x=50, y=50)
 
-    # Mode 0   
-    # Ωl = 10^(-1.7) # ---> δ/r
-    # Ωl = 10^(-1.0)
     Ωη = 10^(2)
-    Ωl = 0.15 # ref
-
-    # Ωl = 0.045 # end member 1
-    # Ωl = 0.55  # middle
-    # Ωl = 2.5   # end member 2
-    # Ωl = 2.0   
-    # Ωl = 1.5
-    # Ωl = 1.0
+    Ωl = 0.15 # reference model
     main(nc,  Ωl, Ωη);
     
 end
