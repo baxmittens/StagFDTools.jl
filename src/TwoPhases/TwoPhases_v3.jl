@@ -370,7 +370,7 @@ function FluidContinuity(Vx, Vy, Pt_loc, Pf_loc, ΔPf_loc, old, rheo, materials,
         # Total mass: ∂ρt∂t + ∇⋅(q) with q = ρf⋅qD + ρt⋅qD⋅V
         lnρs   = @. log(ρs0) + Δt*dlnρsdt
         ρs     = @. exp(lnρs) 
-        lnρf   = @. log(ρf0) + Δt*dlnfsdt
+        lnρf   = @. log(ρf0) + Δt*dlnρfdt
         ρf     = @. exp(lnρf) 
         ρt     = @. (1-Φ ) * ρs  + Φ  * ρf  
         ρt0    = @. (1-Φ0 )* ρs0 + Φ0 * ρf0 
@@ -1395,11 +1395,11 @@ end
 
 function reduce_sparse_matrix!(K, K_loc)
     # Reduction
-    for i=1:4
-        for j=1:4
-            fill!( K[i][j], 0.0) # this is needed
-            for k=1:nthreads()
-                K[i][j] .=  K[i][j]  + K_loc[k][i][j]
+    @inbounds for i=1:4
+        @inbounds for j=1:4
+            # fill!( K[i][j], 0.0) # this is needed
+            @inbounds for k=1:nthreads()
+                K[i][j] .= sparse(K[i][j]) .+ sparse(K_loc[k][i][j])
             end
         end
     end
