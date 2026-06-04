@@ -370,7 +370,7 @@ function FluidContinuity(Vx, Vy, Pt_loc, Pf_loc, ΔPf_loc, old, rheo, materials,
         # Total mass: ∂ρt∂t + ∇⋅(q) with q = ρf⋅qD + ρt⋅qD⋅V
         lnρs   = @. log(ρs0) + Δt*dlnρsdt
         ρs     = @. exp(lnρs) 
-        lnρf   = @. log(ρf0) + Δt*dlnρsdt
+        lnρf   = @. log(ρf0) + Δt*dlnfsdt
         ρf     = @. exp(lnρf) 
         ρt     = @. (1-Φ ) * ρs  + Φ  * ρf  
         ρt0    = @. (1-Φ0 )* ρs0 + Φ0 * ρf0 
