@@ -27,6 +27,9 @@ end
 
 Base.size(A::TripletBlock) = (A.m, A.n)
 
+@inline get_invΔx(Δ) = hasproperty(Δ, :invΔx) ? Δ.invΔx : inv(Δ.x)
+@inline get_invΔy(Δ) = hasproperty(Δ, :invΔy) ? Δ.invΔy : inv(Δ.y)
+
 function Base.getindex(x::Fields, i::Int64)
     @assert 0 < i < 5 
     i == 1 && return x.Vx
@@ -41,7 +44,7 @@ end
 
 function SMomentum_x_Generic(Vx_loc, Vy_loc, Pt,    Pf,     ΔP,      τ0,    G_loc, 𝐷, materials, type,      bcv,    Δ)
     
-    invΔx, invΔy, BC_sym = 1 / Δ.x, 1 / Δ.y, 1.0
+    invΔx, invΔy, BC_sym = get_invΔx(Δ), get_invΔy(Δ), 1.0
 
     # BC
     Vx = SetBCVx1(Vx_loc, type.x, bcv.x, Δ)
@@ -126,7 +129,7 @@ end
 
 function SMomentum_y_Generic(Vx_loc, Vy_loc, Pt_loc, Pf_loc, ΔP,     Pt0,     Pf0,     Φ0,     τ0,     G_loc, rheo    , 𝐷, materials, type, bcv, Δ)
 
-    invΔx, invΔy, BC_sym = 1 / Δ.x, 1 / Δ.y, 1.0 
+    invΔx, invΔy, BC_sym = get_invΔx(Δ), get_invΔy(Δ), 1.0 
 
     ξ0, KΦ, m, ρs, ρf = rheo
  
@@ -250,8 +253,8 @@ end
 function Continuity(Vx, Vy, Pt_loc, Pf_loc, old, rheo, materials, type, bcv, Δ, ::Val{PC}) where {PC}
     Pt0, Pf0, Φ0, ρs0, ρf0 = old
     Ks, KΦ, Kf, ξ0, m, ρsi, ρfi = rheo
-    invΔx   = inv(Δ.x)
-    invΔy   = inv(Δ.y)
+    invΔx   = get_invΔx(Δ)
+    invΔy   = get_invΔy(Δ)
     Δt      = Δ.t
 
     # Density - currently using reference density fluid density
@@ -334,8 +337,8 @@ function FluidContinuity(Vx, Vy, Pt_loc, Pf_loc, ΔPf_loc, old, rheo, materials,
     
     Pt0, Pf0, Φ0, ρs0, ρf0 = old
     Ks, KΦ, Kf, ξ0, m, ρsi, ρfi, kμ, n_CK = rheo
-    invΔx   = inv(Δ.x)
-    invΔy   = inv(Δ.y)
+    invΔx   = get_invΔx(Δ)
+    invΔy   = get_invΔy(Δ)
     Δt      = Δ.t
 
     # Density - currently explicit in time (= using old fluid density)
