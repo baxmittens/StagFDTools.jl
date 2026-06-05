@@ -40,7 +40,6 @@ let
     @show ηs_d   = ηs * ηc
     @show ηΦ_d   = ηΦ * ηc
 
-
     @info "Hydraulic parameters"
     @show n = 3
     @show ϕref = 1e-2
@@ -110,7 +109,7 @@ end
         compressible = true,
         linearizeΦ   = false, 
         single_phase = false,
-        conservative = true,
+        conservative = false,
         plasticity   = DruckerPrager,
     )
     materials.η0             .= [ηsi,          ηs_inc      ] 
@@ -397,7 +396,8 @@ end
 
         cmap = (CairoMakie.Reverse(:matter), 1)
         # cmap = :jet1
-        st  = 15
+        st  = 15 # for  300^2
+        # st  = 50 # for 1000^2
         ind = st:st:size(xc,1)-st
 
         fig = Figure(fontsize = 14, size = (675, 600) )  
@@ -476,6 +476,7 @@ end
 
 function Run()
 
+    # nc = (x=1000, y=1000) 
     # nc = (x=700, y=700)
     nc = (x=300, y=300) # paper figure
     # nc = (x=200, y=200)
