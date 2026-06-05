@@ -17,12 +17,12 @@ import Statistics:mean
     Ωr     = 0.1             # Ratio inclusion radius / len
     Ωηi    = 1e-1            # Ratio (inclusion viscosity) / (matrix viscosity)
     Ωp     = 1.              # Ratio (ε̇bg * ηs) / P0
-    # Independant
+    # Independent
     η0    = 1.              # Shear viscosity
     r      = 0.1             # Inclusion size
     τi     = 1.              # Initial ambiant pressure
     ϕi     = 0.001
-    # Dependant
+    # Dependent
     ηb0    = Ωη * η0        # Bulk viscosity
     k_ηf0  = (r.^2 * Ωl^2) / (ηb0 + 4/3 * η0) # Permeability / fluid viscosity
     len    = r / Ωr          # Inclusion radius

@@ -195,10 +195,10 @@ end
 
 @views function main(nc, Ωl, Ωη)
 
-    # Independant
+    # Independent
     len      = 20.              # Box size
     ϕ0       = 1e-6
-    # Dependant
+    # Dependent
     r_in     = 1.0        # Inclusion radius 
     r_out    = 10*r_in
     ε̇        = 0.0    # Background strain rate

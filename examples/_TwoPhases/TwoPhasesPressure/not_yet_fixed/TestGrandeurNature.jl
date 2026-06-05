@@ -10,11 +10,11 @@ import Statistics:mean
     # Δt0 = 5e9
     # viscoelastic = false
    
-    # Independant
+    # Independent
     η0    = 1.              # Shear viscosity
     r      = 0.1e0             # Inclusion size
     ϕi     = 0.01
-    # Dependant
+    # Dependent
     k_ηf0  = 1e-15/1e5
     ε̇      = 1e-15   # Background strain rate
 

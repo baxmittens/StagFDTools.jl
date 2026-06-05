@@ -36,12 +36,12 @@ end
 
 @views function main(nc, Ωl, Ωη)
 
-    # Independant
+    # Independent
     η0    = 1e40              # Shear viscosity
     ηsi    = 1e40       # Inclusion shear viscosity
     len    = 20.              # Box size
     ϕ0     = 1e-6
-    # Dependant
+    # Dependent
     @show ηb0      = 40*η0       # Bulk viscosity
     ηΦi      = ηb0*2000000
     ηΦo      = ηb0/2000000

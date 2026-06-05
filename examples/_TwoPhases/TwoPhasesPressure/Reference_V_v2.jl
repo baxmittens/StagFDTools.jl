@@ -1,9 +1,8 @@
-using StagFDTools, Base.Threads, StagFDTools.TwoPhases, ExtendableSparse, StaticArrays, CairoMakie, LinearAlgebra, SparseArrays, Printf, JLD2
+using StagFDTools, Base.Threads, StagFDTools.TwoPhases, StaticArrays, CairoMakie, LinearAlgebra, SparseArrays, Printf, JLD2
 import Statistics:mean
 using TimerOutputs
 
 let 
-
     Ωl = 0.15      # ---> δ/r
     Ωr = 0.1       # ---> r/L
     Ωη = 10^(2)    # ---> ηΦ/ηs
@@ -63,7 +62,7 @@ let
     @show Kf*σc
     @show KΦ*σc
 
-    # Back to Dimensionaless
+    # Back to dimensionless (check)
     @show k_ηf0_d / (Lc^2/ηc), δ_d/Lc, δ_d1/Lc
 end
 
@@ -81,13 +80,13 @@ end
     Ωr     = 0.1             # Ratio inclusion radius / L
     Ωηi    = 1e-1            # Ratio (inclusion viscosity) / (matrix viscosity)
     Ωp     = 1.              # Ratio (ε̇bg * ηs) / P0
-    # Independant
+    # Independent
     ηsi    = 1.              # Shear viscosity
     L      = 1.              # Box size
     Pi     = 1.              # Initial ambiant pressure
     Φi     = 1e-2            # Reference
     n_CK   = 3.0
-    # Dependant
+    # Dependent
     @show Ωl, Ωr, L
     δ      = Ωl * Ωr * L     # δ = δ/r * r/L where L = 1
     ηbi    = Ωη * ηsi        # Bulk viscosity
@@ -197,13 +196,13 @@ end
     
     #--------------------------------------------#
     # Intialise field 
-    L   = (x=L, y=L)
-    Δ   = (x=L.x/nc.x, y=L.y/nc.y, t=Δt0)
-    R   = (x=zeros(size_x...), y=zeros(size_y...), pt=zeros(size_c...), pf=zeros(size_c...), Φ=zeros(size_c...))
-    V   = (x=zeros(size_x...), y=zeros(size_y...))
-    η   = (c  =  ones(size_c...), v  =  ones(size_v...) )
-    Φ   = (c=Φi.*ones(size_c...), v=Φi.*ones(size_v...) )
-    Φ0  = (c=Φi.*ones(size_c...), v=Φi.*ones(size_v...) )
+    L       = (x=L, y=L)
+    Δ       = (x=L.x/nc.x, y=L.y/nc.y, t=Δt0)
+    R       = (x=zeros(size_x...), y=zeros(size_y...), pt=zeros(size_c...), pf=zeros(size_c...), Φ=zeros(size_c...))
+    V       = (x=zeros(size_x...), y=zeros(size_y...))
+    η       = (c  =  ones(size_c...), v  =  ones(size_v...) )
+    Φ       = (c=Φi.*ones(size_c...), v=Φi.*ones(size_v...) )
+    Φ0      = (c=Φi.*ones(size_c...), v=Φi.*ones(size_v...) )
     ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...), θ = zeros(size_c...) )
     τ0      = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...) )
     τ       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...), f = zeros(size_c...)  )
@@ -232,8 +231,8 @@ end
     ΔP      = (t=zeros(size_c...), f=zeros(size_c...))
     ρ       = (s = materials.ρs[1]*ones(size_c...), f = materials.ρf[1]*ones(size_c...), t = zeros(size_c...))
     ρ0      = (s = materials.ρs[1]*ones(size_c...), f = materials.ρf[1]*ones(size_c...), t = zeros(size_c...))
-
-    P   = (t=zeros(size_c...), f=zeros(size_c...))
+    P       = (t=zeros(size_c...), f=zeros(size_c...))
+    
     xv  = LinRange(-L.x/2, L.x/2, nc.x+1)
     yv  = LinRange(-L.y/2, L.y/2, nc.y+1)
     xc  = LinRange(-L.x/2+Δ.x/2, L.x/2-Δ.x/2, nc.x)
@@ -360,7 +359,7 @@ end
                 solver_cache = KSP_GCR_TwoPhases_setup( M_PC; restart=GCR_restart, maxit=GCR_maxit)
             end
 
-            # Sparse-direct solver
+            # Sparse-direct-iterative solver
             @timeit to "Linear solve" begin
                 two_phases_mechanical_solver!(dx, M, r, M_PC;
                     solver=solver, solver_cache=solver_cache,
@@ -467,7 +466,6 @@ end
     #--------------------------------------------#
     
     @show Δt0
-
     @show nthreads()
     display(to)
 
