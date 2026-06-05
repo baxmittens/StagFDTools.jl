@@ -23,13 +23,7 @@ using TimerOutputs
     nt  = 1
 
     # Solver parameters
-    niter       = 10     # max. number of non-linear iters
-    γ           = 1e5    # penalty viscosity
-    ϵ_l         = 1e-11  # linear solver tolerance
-    ϵ_nl        = 1e-8   # non-linear solver tolerance
-    inexact     = false  # inexact Newton
-    solver_type = :GCR   # :GCR or :PH
-    α           = LinRange(0.05, 1.0, 6)
+    iter_params = IterParams() # default parameters
 
     # Grid
     L = (x=1.0, y=1.0)
@@ -38,7 +32,8 @@ using TimerOutputs
     y = (min=-L.y,   max=0.0)
 
     # Allocate all fields and solver structures
-    a = Allocs(Direct,nc, config, x, y, Δ)
+    a = Allocs(InexactNewton, nc, config, x, y, Δ)
+    # Default (Direct): a = Allocs(nc, config, x, y, Δ)
 
     inx_Vx, iny_Vx, inx_Vy, iny_Vy, inx_c, iny_c, inx_v, iny_v, size_x, size_y, size_c, size_v = Ranges(nc)
 
@@ -80,9 +75,7 @@ using TimerOutputs
 
     for it = 1:nt
 
-        iter, err = main_loop(a, it, materials, BC, phase_ratios, nc, Δ, to,
-            niter, ϵ_nl, ϵ_l, γ, inexact,
-            solver_type, α, nphases)
+        iter, err = main_loop(a, it, materials, BC, phase_ratios, nc, Δ, to, nphases, iter_params)
 
         fig = Figure(size=(900,700), fontsize=14)
 
