@@ -53,6 +53,8 @@ export AssembleContinuity2D!, AssembleMomentum2D_x!, AssembleMomentum2D_y!
 export TangentOperator!, LineSearch!
 include("Markers.jl")
 export InitialiseMarkerField, InitialisePhaseRatios, SetPhaseRatios!, compute_grid_fields!
+include("Main.jl")
+export AbstractSolver, InexactNewton, Direct, Allocs, Solve!, main_loop
 end
 module StokesDeformed
 using LinearAlgebra, StaticArrays, ExtendableSparse, StaticArrays, StagFDTools, StagFDTools.Rheology
