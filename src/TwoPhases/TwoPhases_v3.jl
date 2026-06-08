@@ -277,7 +277,7 @@ end
     # # !!!!!!!!!!!!!!!!!!!!!!!!!!
     Φ, dΦdt = if materials.linearizeΦ ||  materials.single_phase
         Φ       = Φ0
-        dΦdt    = zeros(Φ)
+        dΦdt    = zero(Φ)
         Φ, dΦdt 
     else
         # Φ       = SMatrix{3, 3}( Porosity(Φ0[ii], Pt[ii], Pf[ii], Pt0[ii], Pf0[ii], KΦ[ii], ξ0[ii], m[ii], 0., 0., Δt)[1] for ii in eachindex(Φ0) )
@@ -356,7 +356,7 @@ end
     dPfdt   = @. (Pf .- Pf0) / Δt
     Φ, dΦdt = if materials.linearizeΦ ||  materials.single_phase
         Φ       = Φ0
-        dΦdt    = zeros(Φ0)
+        dΦdt    = zero(Φ0)
         Φ, dΦdt
     else
         Φ, dΦdt = compute_Φ_and_dΦdt(Φ0, Pt, Pf, Pt0, Pf0, KΦ, ξ0, m, Δt)

@@ -323,7 +323,6 @@ import Statistics:mean
             end
 
             # Set global residual vector
-            r = zeros(nVx + nVy + nPt + nPf)
             SetRHS!(r, R, number, type, nc)
 
             #--------------------------------------------#
@@ -523,7 +522,6 @@ function Run()
     nc = (x=200, y=200) # paper figure
     nc = (x=50, y=50) 
 
-
     # Mode 0   
     Ωη = 10^(2)
     Ωl = 0.15
@@ -535,16 +533,13 @@ function Run()
     # Ωl = 1.5e-1 # with kphi*3 
     # Ωl = 1.0e-0 # with kphi*3, kphi_3, G*3 
     # Ωl = 1.5e-0 # with kphi*3 
-
     # Ωl = .55 # with kphi*3 
    
     # main(nc, Ωl, Ωη, false);
     main(nc, Ωl, Ωη, true);
 
-
     # nc = (x=50, y=50)
     # main(nc, Ωl, Ωη, true);
-    
 end
 
 Run()
