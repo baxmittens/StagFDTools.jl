@@ -476,7 +476,7 @@ let
 
     # nc = (x=1000, y=1000) 
     # nc = (x=700, y=700)
-    nc = (x=1000, y=1000) # paper figure
+    # nc = (x=300, y=300) # paper figure
     # nc = (x=200, y=200)
     # nc = (x=100, y=100)
     # nc = (x=50, y=50)

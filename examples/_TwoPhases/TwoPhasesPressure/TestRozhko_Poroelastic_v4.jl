@@ -1,75 +1,120 @@
-using StagFDTools, StagFDTools.TwoPhases 
-using JLD2, StaticArrays, CairoMakie, LinearAlgebra, SparseArrays, Printf, JLD2, ExactFieldSolutions, GridGeometryUtils
+using StagFDTools, StagFDTools.TwoPhases, ExtendableSparse, StaticArrays, CairoMakie, LinearAlgebra, SparseArrays, Printf, JLD2, ExactFieldSolutions, GridGeometryUtils
 import Statistics:mean
-
+using DifferentiationInterface
 @views function main(nc)
 
     # Linear solver
     solver      = :GCR
     GCR_restart = 25
     GCR_maxit   = 2000
-
+    
     # Characteristic scales
     sc  = (σ=1e0, t=1e0, L=1e0)
-
-    # Parameters of the analytical solution
-    params = (mm = 1.0, mc = 100, rc = 2.0, gr = 0.0, er = 1.0)
 
     # Time steps
     nt     = 1
     Δt0    = 1/sc.t 
 
     # Newton solver
-    niter = 25
+    niter = 1
     ϵ_nl  = 1e-8
     α     = LinRange(0.05, 1.0, 5)
 
-    # Background strain rate
-    ε̇       = params.er*sc.t
-    Pf_bot  = 0.0 /sc.σ
+    # Dependent
+    r_in     = 1.0        # Inclusion radius 
+    r_out    = 10*r_in
+    ε̇        = 0.0    # Background strain rate
+    Pf_bot   = 10.0 /sc.σ
+
+    # Set Rozhko values for fluid pressure
+    G_anal = 1.0
+    ν_anal = 0.25
+    K      = 2/3*G_anal*(1+ν_anal)/(1-2ν_anal) 
 
     # Velocity gradient matrix
     D_BC = @SMatrix( [ε̇ 0; 0 -ε̇] )
-    Pi   = 0.
-    
+
     # Geometries
-    L    = (x=10/sc.L, y=10/sc.L)
+    L    = (x=25/sc.L, y=25/sc.L)
     x    = (min=-L.x/2, max=L.x/2)
     y    = (min=-L.y/2, max=L.y/2)
-    inc  = Ellipse((0.0, 0.0), params.rc/sc.L, params.rc/sc.L; θ = 0.0)
+    r1   = Ellipse((0.0, 0.0), r_in, r_in; θ = 0.0)
+    r2   = Ellipse((0.0, 0.0), r_out, r_out; θ = 0.0)
 
     # Material parameters
-    kill_elasticity = 1e50 # set to 1 to activate elasticity, set to large value to kill it
-    kill_plasticity = 1e50
+    kill_elasticity = 1.0 # set to 1 to activate elasticity, set to large value to kill it
+    kill_plasticity = 1e20
+    kill_viscosity  = 1e40
+
+    # materials = ( 
+    #     g     = [0.0 0.0] / (sc.L/sc.t^2),
+        # oneway       = true, # !!!!!!!!!!! For Rozhko test !!!!!!!!!!!
+        # linearizeΦ   = true, # !!!!!!!!!!! For Rozhko test !!!!!!!!!!!
+        # compressible = true,
+        # plasticity   = :off,
+        # single_phase = false,
+        # conservative = false,
+    #     #        mat    inc  
+        # Φ0    = [1e-6   1e-6  1e-6],
+        # n     = [1.0    1.0   1.0 ],
+        # m     = [0.0    0.0   0.0 ],
+        # n_CK  = [1.0    1.0   1.0 ],
+        # η0   = [1e40  1e40*1e-6  1e40*1e-6]./sc.σ/sc.t, 
+        # ξ0   = [1e40  1e40*1e6   1e40*1e-6]./sc.σ/sc.t,
+        # G     = [G_anal  1e-10 1e-10 ] .* kill_elasticity ./sc.σ, 
+        # ρs    = [2900   2900  2900]/(sc.σ*sc.t^2/sc.L^2),
+        # ρf    = [2600   2600  2600]/(sc.σ*sc.t^2/sc.L^2),
+        # Ks    = [K  K*1e6 1*K/1e6] .* kill_elasticity ./sc.σ,
+        # KΦ    = [K  K*1e6 1*K/1e6] .* kill_elasticity ./sc.σ,
+        # Kf    = [K  K*1e6 1*K/1e6] .* kill_elasticity ./sc.σ, 
+        # k_ηf0 = [1.0    1.0    1.0] ./(sc.L^2/sc.σ/sc.t),
+    #     ϕ     = [35.    35.    35 ].*1,
+    #     ψ     = [10.    10.    10 ].*1,
+    #     C     = [1e7    1e7    1e7] * kill_plasticity ./sc.σ,
+    #     ηvp   = [0.0    0.0    1.0]./sc.σ/sc.t,
+    #     cosϕ  = [0.0    0.0    1.0],
+    #     sinϕ  = [0.0    0.0    1.0],
+    #     sinψ  = [0.0    0.0    1.0],
+    # )
+
 
     # Material parameters
-    nphases = 2
-        materials = initialize_materials_TwoPhases(nphases,
-        oneway       = false,
+    nphases = 3
+    materials = initialize_materials_TwoPhases(nphases,
+        oneway       = true, # !!!!!!!!!!! For Rozhko test !!!!!!!!!!!
+        linearizeΦ   = true, # !!!!!!!!!!! For Rozhko test !!!!!!!!!!!
         compressible = true,
-        linearizeΦ   = true,    
+        plasticity   = DruckerPrager,
         single_phase = false,
         conservative = false,
-        plasticity   = DruckerPrager,
     )
-    materials.Φ0    .= [1e-16,   1e-16]
-    materials.n     .= [1.0,    1.0 ]
-    materials.m     .= [0.0,    0.0 ]
-    materials.n_CK  .= [1.0,    1.0 ]
-    materials.η0    .= [params.mm,  params.mc ]./sc.σ/sc.t
-    materials.ξ0    .= [1e30,   1e30]./sc.σ/sc.t
-    materials.G     .= [1e30,   1e30] .* kill_elasticity ./sc.σ
-    materials.ρs    .= [2900,   2900]/(sc.σ*sc.t^2/sc.L^2)
-    materials.ρf    .= [2600,   2600]/(sc.σ*sc.t^2/sc.L^2)
-    materials.Ks    .= [1e30,   1e30] .* kill_elasticity ./sc.σ
-    materials.KΦ    .= [1e30,   1e30] .* kill_elasticity ./sc.σ
-    materials.Kf    .= [1e30,   1e30] .* kill_elasticity ./sc.σ 
-    materials.k_ηf0 .= [ 1.0,    1.0] ./(sc.L^2/sc.σ/sc.t)
-    materials.plasticity.C   .= [1e50,  1e50]
-    materials.plasticity.ϕ   .= [30. ,  30. ]
-    materials.plasticity.ηvp .= [8e-3,  8e-3]
-    materials.plasticity.ψ   .= [0.0 ,  0.0 ]
+    materials.Φ0    .= [1e-6,     1e-6,    1e-6]
+    materials.n     .= [ 1.0,      1.0,     1.0]
+    materials.m     .= [ 0.0,      0.0,     0.0]
+    materials.n_CK  .= [ 1.0,      1.0,     1.0]
+    materials.η0    .= [1e40,     1e-6,    1e-6]./sc.σ/sc.t .*kill_viscosity 
+    materials.ξ0    .= [1e40,      1e6,    1e-6]./sc.σ/sc.t .*kill_viscosity
+    materials.G     .= [G_anal,  1e-10,   1e-10] .* kill_elasticity ./sc.σ
+    materials.ρs    .= [2900,     2900,    2900]./(sc.σ*sc.t^2/sc.L^2)
+    materials.ρf    .= [2600,     2600,    2600]./(sc.σ*sc.t^2/sc.L^2)
+    materials.Ks    .= [K,       K*1e6, 1*K/1e6] .* kill_elasticity ./sc.σ
+    materials.KΦ    .= [K,       K*1e6, 1*K/1e6] .* kill_elasticity ./sc.σ
+    materials.Kf    .= [K,       K*1e6, 1*K/1e6] .* kill_elasticity ./sc.σ 
+    materials.k_ηf0 .= [1.0,    1.0,   1.0] ./(sc.L^2/sc.σ/sc.t)
+    materials.plasticity.C   .= [1e50,  1e50, 1e50]
+    materials.plasticity.ϕ   .= [30. ,  30. , 30. ]
+    materials.plasticity.ηvp .= [8e-3,  8e-3, 8e-3]
+    materials.plasticity.ψ   .= [0.0 ,  0.0 , 0.0 ]
     preprocess!(materials)
+
+    # nondim 
+    m      = 0.0   # 0 - circle, 0.5 - ellipse, 1 - cut 
+    # dependent scales
+    Pf_out = 0.    # Fluid pressure on external boundary, Pa
+    dPf    = 1.0   # Fluid pressure on cavity - Po    
+    Δt0    = 1e0
+    nt     = 1
+    params = (r_in=r_in, r_out=r_out, P0=Pf_out, dPf=dPf, m=m, nu=ν_anal, G=G_anal)
 
     # Resolution
     inx_Vx, iny_Vx, inx_Vy, iny_Vy, inx_c, iny_c, inx_v, iny_v, size_x, size_y, size_c, size_v = Ranges(nc)
@@ -95,16 +140,28 @@ import Statistics:mean
     type.Vy[inx_Vy,end-1]   .= :Dirichlet_normal 
     # -------- Pt -------- #
     type.Pt[2:end-1,2:end-1] .= :in
-    # type.Pt[1,:]             .= :Dirichlet 
-    # type.Pt[end,:]           .= :Dirichlet 
-    # type.Pt[:,1]             .= :Dirichlet
-    # type.Pt[:,end]           .= :Dirichlet
     # -------- Pf -------- #
     type.Pf[2:end-1,2:end-1] .= :in
-    # type.Pf[1,:]             .= :Dirichlet 
-    # type.Pf[end,:]           .= :Dirichlet 
-    # type.Pf[:,1]             .= :Dirichlet
-    # type.Pf[:,end]           .= :Dirichlet
+    type.Pf[1,:]             .= :Dirichlet 
+    type.Pf[end,:]           .= :Dirichlet 
+    type.Pf[:,1]             .= :Dirichlet
+    type.Pf[:,end]           .= :Dirichlet
+
+    # Add a constant pressure within a circular region
+    Δ   = (x=L.x/nc.x, y=L.y/nc.y, t=Δt0)
+    X = GenerateGrid(x, y, Δ, nc)
+
+    @views type.Pf[inx_c,  iny_c ][(X.c.x.^2 .+ (X.c.y').^2) .<= r_in^2 ] .= :constant
+    @views type.Pf[inx_c,  iny_c ][(X.c.x.^2 .+ (X.c.y').^2) .>= r_out^2] .= :constant
+    
+    @views type.Vx[inx_Vx, iny_Vx][(X.v.x.^2 .+ (X.c.y').^2) .<= r_in^2 ] .= :constant
+    @views type.Vx[inx_Vx, iny_Vx][(X.v.x.^2 .+ (X.c.y').^2) .>= r_out^2] .= :constant
+    
+    @views type.Vy[inx_Vy, iny_Vy][(X.c.x.^2 .+ (X.v.y').^2) .<= r_in^2 ] .= :constant
+    @views type.Vy[inx_Vy, iny_Vy][(X.c.x.^2 .+ (X.v.y').^2) .>= r_out^2] .= :constant
+    
+    @views type.Pt[inx_c, iny_c][(X.c.x.^2 .+ (X.c.y').^2) .<= r_in^2 ] .= :constant
+    @views type.Pt[inx_c, iny_c][(X.c.x.^2 .+ (X.c.y').^2) .>= r_out^2] .= :constant
     
     # Equation Fields
     number = Fields(
@@ -152,8 +209,8 @@ import Statistics:mean
     V   = (x=zeros(size_x...), y=zeros(size_y...))
     Vi  = (x=zeros(size_x...), y=zeros(size_y...))
     η   = (c  =  ones(size_c...), v  =  ones(size_v...) )
-    Φ   = (c=materials.Φ0[1]*ones(size_c...), v=materials.Φ0[1]*ones(size_v...) )
-    Φ0  = (c=materials.Φ0[1]*ones(size_c...), v=materials.Φ0[1]*ones(size_v...) )
+    Φ   = (c=zeros(size_c...), v=zeros(size_v...) )
+    Φ0  = (c=zeros(size_c...), v=zeros(size_v...) )
     εp  = zeros(size_c...)
     ε̇       = (xx = zeros(size_c...), yy = zeros(size_c...), xy = zeros(size_v...), II = zeros(size_c...), θ = zeros(size_c...) )
     τ0      = (xx = ones(size_c...), yy = ones(size_c...), xy = zeros(size_v...) )
@@ -178,7 +235,7 @@ import Statistics:mean
     
     λ̇       = (c  = zeros(size_c...), v  = zeros(size_v...) )
     phases  = (c= ones(Int64, size_c...), v= ones(Int64, size_v...), x =ones(Int64, size_x...), y=ones(Int64, size_y...) )  # phase on velocity points
-    P       = (t = Pi*ones(size_c...), f = Pi*ones(size_c...))
+    P       = (t = ones(size_c...), f = ones(size_c...))
     Pi      = (t = ones(size_c...), f = ones(size_c...))
     P0      = (t = zeros(size_c...), f = zeros(size_c...))
     ΔP      = (t = zeros(size_c...), f = zeros(size_c...))
@@ -191,14 +248,14 @@ import Statistics:mean
     # Initial configuration
     V.x[inx_Vx,iny_Vx] .= D_BC[1,1]*X.v.x .+ D_BC[1,2]*X.c.y' 
     V.y[inx_Vy,iny_Vy] .= D_BC[2,1]*X.c.x .+ D_BC[2,2]*X.v.y'
-    P.t[inx_c, iny_c ]  .= 0.                 
-    UpdateSolution!(V, P, dx, number, type, nc)
 
-    for I in CartesianIndices(Φ.c)   # loop on all centroids !
-        i, j = I[1], I[2]
-        𝐱 = @SVector([X.c_e.x[i], X.c_e.y[j]])
-        phases.c[i, j] = 1
-        if  inside(𝐱, inc)
+    for i in inx_c, j in iny_c   # loop on inner centroids
+        𝐱 = @SVector([X.c.x[i-1], X.c.y[j-1]])
+        phases.c[i, j] = 3
+        if  inside(𝐱, r2)
+            phases.c[i, j] = 1
+        end
+        if  inside(𝐱, r1)
             phases.c[i, j] = 2
         end
         Φ_ini     = materials.Φ0[phases.c[i, j]]
@@ -209,8 +266,11 @@ import Statistics:mean
 
     for i in inx_v, j in iny_v   # loop on centroids
         𝐱 = @SVector([X.v.x[i-1], X.v.y[j-1]])
-        phases.v[i, j] = 1
-        if  inside(𝐱, inc)
+        phases.v[i, j] = 3
+        if  inside(𝐱, r2)
+            phases.v[i, j] = 1
+        end
+        if  inside(𝐱, r1)
             phases.v[i, j] = 2
         end
         Φ.v[i, j] = materials.Φ0[phases.v[i, j]]
@@ -218,66 +278,68 @@ import Statistics:mean
 
     phase_ratios = InitialisePhaseRatios(phases, nphases)
 
-    # Initial pressure fields
-    P_seafloor = 0*20e6/sc.σ 
-    P.f       .= P_seafloor .- ρ.f * materials.g[2] .* Δ.y/2
-    P.t       .= P_seafloor .- ρ.t * materials.g[2] .* Δ.y/2
-
-    for i in inx_c, j in (nc.y+2-1):-1:2
-        # Interpolate densities at Vy points (midpoint)
-        ρ̄f = 1/2 * (ρ.f[i,j+1] + ρ.f[i,j])   
-        ρ̄t = 1/2 * (ρ.t[i,j+1] + ρ.t[i,j])  
-        # ∫ (-ρ̄ g) dz (g < 0)
-        P.f[i,j] = P.f[i,j+1] - ρ̄f * materials.g[2] .* Δ.y
-        P.t[i,j] = P.t[i,j+1] - ρ̄t * materials.g[2] .* Δ.y
-    end
-
     # Boundary condition values
     BC = ( Vx = zeros(size_x...), Vy = zeros(size_y...), Pt = zeros(size_c...), Pf = zeros(size_c...))
-    BC.Vx[     2, iny_Vx] .= (type.Vx[     1, iny_Vx] .== :Neumann_normal)  .* D_BC[1,1]
-    BC.Vx[ end-1, iny_Vx] .= (type.Vx[   end, iny_Vx] .== :Neumann_normal)  .* D_BC[1,1]
+    BC.Vx[     2, iny_Vx] .= (type.Vx[     1, iny_Vx] .== :Neumann_normal) .* D_BC[1,1]
+    BC.Vx[ end-1, iny_Vx] .= (type.Vx[   end, iny_Vx] .== :Neumann_normal) .* D_BC[1,1]
     BC.Vx[inx_Vx,      2] .= (type.Vx[inx_Vx,      2] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx,     2] .== :Dirichlet_tangent) .* (D_BC[1,1]*X.v.x .+ D_BC[1,2]*X.v.y[1]  )
     BC.Vx[inx_Vx,  end-1] .= (type.Vx[inx_Vx,  end-1] .== :Neumann_tangent) .* D_BC[1,2] .+ (type.Vx[inx_Vx, end-1] .== :Dirichlet_tangent) .* (D_BC[1,1]*X.v.x .+ D_BC[1,2]*X.v.y[end])
-    BC.Vy[inx_Vy,     2 ] .= (type.Vy[inx_Vy,     1 ] .== :Neumann_normal)  .* D_BC[2,2]
-    BC.Vy[inx_Vy, end-1 ] .= (type.Vy[inx_Vy,   end ] .== :Neumann_normal)  .* D_BC[2,2]
+    BC.Vy[inx_Vy,     2 ] .= (type.Vy[inx_Vy,     1 ] .== :Neumann_normal) .* D_BC[2,2]
+    BC.Vy[inx_Vy, end-1 ] .= (type.Vy[inx_Vy,   end ] .== :Neumann_normal) .* D_BC[2,2]
     BC.Vy[     2, iny_Vy] .= (type.Vy[     2, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[    2, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*X.v.x[1]   .+ D_BC[2,2]*X.v.y)
     BC.Vy[ end-1, iny_Vy] .= (type.Vy[ end-1, iny_Vy] .== :Neumann_tangent) .* D_BC[2,1] .+ (type.Vy[end-1, iny_Vy] .== :Dirichlet_tangent) .* (D_BC[2,1]*X.v.x[end] .+ D_BC[2,2]*X.v.y)
     BC.Pf[     :,     1 ] .= Pf_bot
 
-    # Analytics
-    V_ana = (
-        x = zero(BC.Vx),
-        y = zero(BC.Vy),
-    )
-    Pt_ana = zero(BC.Pt)
-    ϵV = (
-        x   = zero(BC.Vx),
-        y   = zero(BC.Vy),
-    )
-    ϵP   = zero(BC.Pt)
+    #--------------------------------------------#
+    Ur_ana = zero(BC.Pf)
+    Ux_ana = zero(BC.Pf)
+    Ut_ana = zero(BC.Pf)
+    Ux_ana = zero(BC.Vx)
+    Uy_ana = zero(BC.Vy)
+    Pf_ana = zero(BC.Pf)
+    Pt_ana = zero(BC.Pf)
+    ϵ_Ur   = zero(BC.Pf)
+    ϵ_Pf   = zero(BC.Pf)
+    ϵ_Pt   = zero(BC.Pf)
+    ϵ_Ux   = zero(BC.Vx)
 
-    # Get P analytics 
     for i=1:size(BC.Pf,1), j=1:size(BC.Pf,2)
-        sol = Stokes2D_Schmid2003( [X.c_e.x[i], X.c_e.y[j]]; params )
-        Pt_ana[i,j] = sol.p
-        P.t[i,j]    = sol.p
+        # coordinate transform
+        sol = Poroelasticity2D_Rozhko2008([X.c_e.x[i]; X.c_e.y[j]] ; params)
+        BC.Pf[i,j]  = sol.pf
+        # P.f[i,j]    = sol.pf
+        Pf_ana[i,j] = sol.pf
+        # P.t[i,j]    = sol.pt*3/2
+        BC.Pt[i,j]  = sol.pt#*3/2
+        Pt_ana[i,j] = sol.pt#*3/2
+        Ur_ana[i,j] = sol.u_pol[1]
+        Ut_ana[i,j] = sol.u_pol[2]
     end
 
-    # Get Vx analytics 
+    xvx = LinRange(-L.x/2-Δ.x, L.x/2+Δ.x, nc.x+3)# nc.x+3, nc.y+4
+    yvx = LinRange(-L.y/2-3*Δ.y/2, L.y/2+3*Δ.y/2, nc.y+4)
     for i=1:size(BC.Vx,1), j=1:size(BC.Vx,2)
-        sol = Stokes2D_Schmid2003( [X.vx_e.x[i], X.vx_e.y[j]]; params )
-        BC.Vx[i,j]   =  sol.V[1]
-        V.x[i,j]     = sol.V[1]
-        V_ana.x[i,j] = sol.V[1]
+        # coordinate transform
+        sol = Poroelasticity2D_Rozhko2008([xvx[i]; yvx[j]] ; params)
+        BC.Vx[i,j]  = sol.u[1]
+        V.x[i,j]    = sol.u[1]
+        Ux_ana[i,j] = sol.u[1]
     end
 
-    # Get Vy analytics 
+    xvy = LinRange(-L.x/2-3*Δ.x/2, L.x/2+3*Δ.x/2, nc.x+4)# nc.x+3, nc.y+4
+    yvy = LinRange(-L.y/2-Δ.y, L.y/2+Δ.y, nc.y+3)
     for i=1:size(BC.Vy,1), j=1:size(BC.Vy,2)
-        sol = Stokes2D_Schmid2003( [X.vy_e.x[i], X.vy_e.y[j]]; params )
-        BC.Vy[i,j]   = sol.V[2] 
-        V.y[i,j]     = sol.V[2] 
-        V_ana.y[i,j] = sol.V[2]
+        # coordinate transform
+        sol = Poroelasticity2D_Rozhko2008([xvy[i]; yvy[j]] ; params)
+        BC.Vy[i,j]  = sol.u[2]
+        V.y[i,j]    = sol.u[2]
+        Uy_ana[i,j] = sol.u[2]
     end
+
+    # This will set all correct values for constant pressure points 
+    # Inside inner radius / outside outer radius
+    P.f .= Pf_ana
+    P.t .= Pt_ana
 
     #--------------------------------------------#
 
@@ -295,6 +357,19 @@ import Statistics:mean
 
     err  = (x = zeros(niter), y = zeros(niter), pt = zeros(niter), pf = zeros(niter))
     
+    # fig  = Figure(fontsize = 20, size = (900, 600) )    
+    # step = 10
+    # ftsz = 15 
+    # eps  = 1e-15
+    # ax    = Axis(fig[1,1], aspect=DataAspect(), title=L"$P^f$ (MPa)", xlabel=L"x", ylabel=L"y")
+    # field = (phases.c)[inx_c,iny_c].*sc.σ
+    # hm    = heatmap!(ax, X.c.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
+    # contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
+    # hidexdecorations!(ax)
+    # Colorbar(fig[2, 1], hm, label = L"$P^f numerics$", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
+    # display(fig)  
+
+    #--------------------------------------------#
     for it=1:nt
 
         @printf("\nStep %04d\n", it)
@@ -319,7 +394,7 @@ import Statistics:mean
         old  = τ0, P0, Φ0, ρ0
         rheo = G, Ks, KΦ, Kf, ξ0, m, ρsi, ρfi, k_ηf0, n_CK
 
-        for iter=1:2  #niter !!!!!!!!!!!!!
+        for iter=1:niter
 
             @printf("     Step %04d --- Iteration %04d\n", it, iter)
 
@@ -343,7 +418,7 @@ import Statistics:mean
             @show norm(R.y[inx_Vy,iny_Vy])/sqrt(nVy)
             @show norm(R.pt[inx_c,iny_c])/sqrt(nPt)
             @show norm(R.pf[inx_c,iny_c])/sqrt(nPf)
- 
+
             err.x[iter]  = @views norm(R.x[inx_Vx,iny_Vx])/sqrt(nVx)
             err.y[iter]  = @views norm(R.y[inx_Vy,iny_Vy])/sqrt(nVy)
             err.pt[iter] = @views norm(R.pt[inx_c,iny_c])/sqrt(nPt)
@@ -389,24 +464,25 @@ import Statistics:mean
             two_phases_mechanical_solver!(dx, M, r, M_PC;
                 solver=solver, solver_cache=solver_cache,
                 ηb=1e5, ϵ_l=1e-9, niter_l=10, restart=20, noisy=true )
-    
+
             #--------------------------------------------#
-            # Solution update
             imin = LineSearch!(rvec, α, dx, R, V, P, ε̇, τ, Vi, Pi, ΔP, Φ, old, rheo, λ̇,  η, 𝐷, 𝐷_ctl, number, type, BC, materials, phases, nc, Δ)
             UpdateSolution!(V, P, α[imin]*dx, number, type, nc)
-            @info "Line search α = $(α[imin])"
-
         end
+
         #--------------------------------------------#
 
         # Include plasticity corrections
         P.t .= P.t .+ ΔP.t
         P.f .= P.f .+ ΔP.f
         εp  .+= ε̇.II*Δ.t
+        
+        τxyc = av2D(τ.xy)
+        ε̇xyc = av2D(ε̇.xy)
 
-        Vxsc = 0.5*(V.x[1:end-1,2:end-1] + V.x[2:end,2:end-1])[2:end-1,2:end-1]
-        Vysc = 0.5*(V.y[2:end-1,1:end-1] + V.y[2:end-1,2:end])[2:end-1,2:end-1]
-        Vs   = sqrt.( Vxsc.^2 .+ Vysc.^2)
+        Vxsc = 0.5*(V.x[1:end-1,2:end-1] + V.x[2:end,2:end-1])
+        Vysc = 0.5*(V.y[2:end-1,1:end-1] + V.y[2:end-1,2:end])
+        Vs   = sqrt.( Vxsc.^2 .+ Vysc.^2)[2:end-1,2:end-1]
         Vxf  = -materials.k_ηf0[1]*diff(P.f, dims=1)/Δ.x
         Vyf  = -materials.k_ηf0[1]*diff(P.f, dims=2)/Δ.y
         Vyfc = 0.5*(Vyf[1:end-1,:] .+ Vyf[2:end,:])
@@ -423,102 +499,86 @@ import Statistics:mean
         probes.t[it]    = it*Δ.t*sc.t
 
         #-------------------------------------------# 
-        P.t .-= mean(P.t[inx_c,iny_c]) 
-
-        # Compute errors
-        ϵP[inx_c,iny_c] .= abs.(Pt_ana[inx_c,iny_c] .- P.t[inx_c,iny_c])
-        ϵV.x[inx_Vx,iny_Vx] .= abs.(V_ana.x[inx_Vx,iny_Vx] .- V.x[inx_Vx,iny_Vx])
-        ϵV.y[inx_Vy,iny_Vy] .= abs.(V_ana.y[inx_Vy,iny_Vy] .- V.y[inx_Vy,iny_Vy])
-
-        @info "Errors:"
-        @info mean(abs.(ϵV.x))
-        @info mean(abs.(ϵV.y))
-        @info mean(abs.(ϵP[inx_c,iny_c]))
-
+        Vr_viz  = zero(Vxsc)
+        Vt_viz  = zero(Vxsc)
         Pt_viz = copy(P.t)
-        Pt_viz[P.t.>maximum(Pt_ana)] .= maximum(Pt_ana)
-        Pt_viz[P.t.<minimum(Pt_ana)] .= minimum(Pt_ana)
-      
-        Vx_viz = copy(V.x)
-        # Vx_viz[V.x.>maximum(V_ana.x)] .= maximum(V_ana.x)
-        # Vx_viz[V.x.<minimum(V_ana.x)] .= minimum(V_ana.x)
+        Pf_viz = copy(P.f)
 
-        Vy_viz = copy(V.y)
-        # Vy_viz[V.y.>maximum(V_ana.y)] .= maximum(V_ana.y)
-        # Vy_viz[V.y.<minimum(V_ana.y)] .= minimum(V_ana.y)
-        #--------------------------------------------#
-        
+        for i in 1:length(X.c_e.x), j in 1:length(X.c_e.y)
+
+            r = sqrt.(X.c_e.x[i].^2 .+ X.c_e.y[j].^2)
+            t = atan.(X.c_e.y[j], X.c_e.x[i])
+
+            J = [cos(t) sin(t);    
+                -sin(t) cos(t)]
+            V_cart = [Vxsc[i,j]; Vysc[i,j]]
+            V_pol  =  J*V_cart
+
+            Vr_viz[i,j] = V_pol[1]
+            Vt_viz[i,j] = V_pol[2]
+
+            if (X.c_e.x[i].^2 .+ X.c_e.y[j].^2) <= r_in^2 ||  (X.c_e.x[i].^2 .+ X.c_e.y[j].^2) >= r_out^2
+                Vr_viz[i,j] = NaN
+                Vt_viz[i,j] = NaN
+                Pf_viz[i,j] = NaN
+                Pt_viz[i,j] = NaN
+                Ur_ana[i,j] = NaN
+                Ut_ana[i,j] = NaN
+            else
+                ϵ_Ur[i,j] = abs(Ur_ana[i,j] - Vr_viz[i,j] )
+                ϵ_Pf[i,j] = abs(Pf_ana[i,j] - P.f[i,j])
+                ϵ_Pt[i,j] = abs(Pt_ana[i,j]*3/2 - P.t[i,j])
+            end
+            
+        end
+
+        for i=1:size(BC.Vx,1), j=1:size(BC.Vx,2)
+            ro  = sqrt(xvx[i]^2 + yvx[j]^2)
+            if ro <= r_in || ro >= r_out
+                # Vx[i,j]     = NaN
+            else
+                ϵ_Ux[i,j] = abs(Ux_ana[i,j] - V.x[i,j])
+            end
+        end
+
+        # @show mean(ϵ_Ur)
+        # @show mean(ϵ_Ux)
+        # @show mean(ϵ_Pf)
+        # @show mean(ϵ_Pt)
+   
+        ymid = Int64(floor(nc.y/2))
+        err = mean(abs.(Pf_ana[:, ymid][3:end-2] .-  P.f[:, ymid][3:end-2]))
+        @info "Error Pf: $(err)"
+
         # Visualise
         function figure()
-            fig  = Figure(fontsize = 20, size = (900, 900) )    
+            fig  = Figure(fontsize = 20, size = (900, 600) )    
             step = 10
             ftsz = 15
             eps  = 1e-10
 
-            ax    = Axis(fig[1,1], aspect=DataAspect(), title=L"$P^t$ numerics", xlabel=L"x", ylabel=L"y")
-            field = (Pt_viz)[inx_c,iny_c].*sc.σ
+            ax    = Axis(fig[1,1:2], title=L"Horizontal $P^f$ profile")
+            # lines!(ax, X.v.x, Ux_ana[:, ymid][2:end-1], color=:black)
+            # scatter!(ax, X.v.x, V.x[:, ymid][2:end-1], color=:black)
+            lines!(ax, X.c.x, Pf_ana[:, ymid][2:end-1], color=:black)
+            scatter!(ax, X.c.x, P.f[:, ymid][2:end-1], color=:black)
+            # lines!(ax, X.c.x, Pt_ana[:, ymid][2:end-1], color=:red)
+            # scatter!(ax, X.c.x, P.t[:, ymid][2:end-1], color=:red)
+
+            ax    = Axis(fig[2,1], aspect=DataAspect(), title=L"$P^f$ numerics", xlabel=L"x", ylabel=L"y")
+            field = (P.f)[inx_c,iny_c].*sc.σ
+            hm    = heatmap!(ax, X.c.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(Pf_ana)-eps, maximum(Pf_ana)+eps))
+            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
+            hidexdecorations!(ax)
+            Colorbar(fig[3, 1], hm, label = L"$P^f$ numerics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
+            
+            ax    = Axis(fig[2,2], aspect=DataAspect(), title=L"$P^f$ analytics", xlabel=L"x", ylabel=L"y")
+            # field = log10.(abs.(R.pt.+eps)[inx_c,iny_c].*sc.σ)
+            # field = Pf_ana
             hm    = heatmap!(ax, X.c.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
             contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
             hidexdecorations!(ax)
-            Colorbar(fig[2, 1], hm, label = L"$P^t$ numerics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
-            
-            ax    = Axis(fig[1,2], aspect=DataAspect(), title=L"$P^t$ analytics", xlabel=L"x", ylabel=L"y")
-            field = (Pt_ana)[inx_c,iny_c].*sc.σ
-            hm    = heatmap!(ax, X.c.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
-            hidexdecorations!(ax)
-            Colorbar(fig[2, 2], hm, label = L"$P^t$ analytics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
-
-            ax    = Axis(fig[1,3], aspect=DataAspect(), title=L"$P^t$ error", xlabel=L"x", ylabel=L"y")
-            field = (ϵP)[inx_c,iny_c].*sc.σ
-            hm    = heatmap!(ax, X.c.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
-            hidexdecorations!(ax)
-            Colorbar(fig[2, 3], hm, label = L"$P^t$ analytics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
-
-            ###########################
-            ax    = Axis(fig[3,1], aspect=DataAspect(), title=L"$V_{x}$ numerics", xlabel=L"x", ylabel=L"y")
-            field = (Vx_viz)[inx_Vx,iny_Vx].*sc.σ
-            hm    = heatmap!(ax, X.v.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
-            hidexdecorations!(ax)
-            Colorbar(fig[4, 1], hm, label = L"$V_{x}$ numerics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
-            
-            ax    = Axis(fig[3,2], aspect=DataAspect(), title=L"$V_{x}$ analytics", xlabel=L"x", ylabel=L"y")
-            field = (V_ana.x)[inx_Vx,iny_Vx].*sc.σ
-            hm    = heatmap!(ax, X.v.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
-            hidexdecorations!(ax)
-            Colorbar(fig[4, 2], hm, label = L"$V_{x}$ analytics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
-
-            ax    = Axis(fig[3,3], aspect=DataAspect(), title=L"$V_{x}$ error", xlabel=L"x", ylabel=L"y")
-            field = (ϵV.x)[inx_Vx,iny_Vx].*sc.σ
-            hm    = heatmap!(ax, X.v.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
-            hidexdecorations!(ax)
-            Colorbar(fig[4, 3], hm, label = L"$V_{x}$ analytics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
-
-            ###########################
-            ax    = Axis(fig[5,1], aspect=DataAspect(), title=L"$V_{y}$ numerics", xlabel=L"x", ylabel=L"y")
-            field = (Vy_viz)[inx_Vy,iny_Vy].*sc.σ
-            hm    = heatmap!(ax, X.v.x, X.c.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
-            hidexdecorations!(ax)
-            Colorbar(fig[6, 1], hm, label = L"$V_{y}$ numerics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
-            
-            ax    = Axis(fig[5,2], aspect=DataAspect(), title=L"$V_{y}$ analytics", xlabel=L"x", ylabel=L"y")
-            field = (V_ana.y)[inx_Vy,iny_Vy].*sc.σ
-            hm    = heatmap!(ax, X.c.x, X.v.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
-            hidexdecorations!(ax)
-            Colorbar(fig[6, 2], hm, label = L"$V_{y}$ analytics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
-
-            ax    = Axis(fig[5,3], aspect=DataAspect(), title=L"$V_{y}$ error", xlabel=L"x", ylabel=L"y")
-            field = (ϵV.y)[inx_Vy,iny_Vy].*sc.σ
-            hm    = heatmap!(ax, X.c.x, X.v.y, field, colormap=(Makie.Reverse(:matter), 1), colorrange=(minimum(field)-eps, maximum(field)+eps))
-            contour!(ax, X.c.x, X.c.y,  phases.c[inx_c,iny_c], color=:black)
-            hidexdecorations!(ax)
-            Colorbar(fig[6, 3], hm, label = L"$V_{y}$ analytics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
+            Colorbar(fig[3, 2], hm, label = L"$P^f$ analytics", height=20, width = 200, labelsize = ftsz, ticklabelsize = ftsz, vertical=false, valign=true, flipaxis = true )
 
             display(fig) 
             DataInspector(fig)
@@ -529,25 +589,21 @@ import Statistics:mean
 
     end
 
-    @show norm(P.t[inx_c,iny_c])/sqrt(nc.x*nc.y)
-    @show norm(Pt_ana[inx_c,iny_c])/sqrt(nc.x*nc.y)
-    @show extrema(Pt_ana[inx_c,iny_c])
-
     #--------------------------------------------#
 
     return P, Δ, (c=X.c.x, v=X.v.x), (c=X.c.y, v=X.v.y)
 end
 
 ##################################
-function Run(n)
+function Run()
 
-    nc = (x=n, y=n)
+    nc = (x=200, y=200)
 
-    # Mode 0
-    main(nc)
+    # Mode 0  
+    main(nc);
     # P, Δ, x, y = main(nc);
     # save("/Users/tduretz/PowerFolders/_manuscripts/TwoPhasePressure/benchmark/SchmidTest.jld2", "x", x, "y", y, "P", P )
 
 end
 
-Run(50)
+Run()
