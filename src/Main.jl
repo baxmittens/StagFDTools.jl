@@ -1,9 +1,7 @@
-using JustPIC
-
 abstract type AbstractSolver end
 
 # Keeping a Solver struct if one wants to add solvers
-struct JustPICAdvection{}
+struct JustPICAdvection{P,G,X,PA,PR}
     particles::P
     grid_vi::G
     xvi::X
@@ -62,11 +60,12 @@ function Base.getproperty(a::Allocs, s::Symbol)
     return getproperty(getfield(a, :solv), s)
 end
 
-function JustPICAdvection(backend, a::Allocs, nxcell, max_xcell, min_xcell, nc, args)
+function JustPICAdvection(backend, a::Allocs, nxcell, max_xcell, min_xcell, nc, nphases, args)
     grid_vx = (a.X.v.x, a.X.c_e.y)
     grid_vy = (a.X.c_e.x, a.X.v.y)
     xvi = (a.X.v.x, a.X.v.y)
-    particles = init_particles(backend, nxcell, max_xcell, min_xcell, grid_vx, grid_vy)
+    d = (step(a.X.v.x), step(a.X.v.y))
+    particles = init_particles(backend, nxcell, max_xcell, min_xcell, (grid_vx, grid_vy))
     particle_args = init_cell_arrays(particles, Val(args))
     phase_ratios = JustPIC._2D.PhaseRatios(backend, nphases, values(nc))
     return JustPICAdvection(particles, (grid_vx, grid_vy), xvi, particle_args, phase_ratios)
@@ -214,8 +213,7 @@ function Solve!(a::Allocs, materials, BC, phase_ratios, nc, Δ, to,
     update_solution!(a, materials, BC, phase_ratios, nc, Δ, to, rvec, iter, ϵ0, ϵ, iter_params)
 end
 
-function main_solver!(a::Allocs, it, materials, BC, phase_ratios, nc, Δ, to,
-    nphases, iter_params)
+function main_solver!(a::Allocs, it, materials, BC, nc, Δ, to, nphases, iter_params)
 
     rvec = zeros(length(iter_params.α))
     err = (x=zeros(iter_params.niter),
@@ -232,6 +230,8 @@ function main_solver!(a::Allocs, it, materials, BC, phase_ratios, nc, Δ, to,
     nVx = maximum(a.number.Vx)
     nVy = maximum(a.number.Vy)
     nPt = maximum(a.number.Pt)
+
+    phase_ratios = a.phase_ratios
 
     compute_grid_fields!(a.G, a.β, a.ρ, a.ξ, materials, phase_ratios, nc, nphases)
 
@@ -265,20 +265,22 @@ function main_solver!(a::Allocs, it, materials, BC, phase_ratios, nc, Δ, to,
     return iter, err
 end
 
-main_loop(a, it, materials, BC, nc, Δ, to, nphases, iter_params) = main_loop(a, it, materials, BC, phase_ratios, nc, Δ, to, nphases, iter_params)
 # No advection
 function main_loop(a::Allocs, it, materials, BC, phase_ratios::Nothing, nc, Δ, to, nphases, iter_params)
     @printf("Step %04d\n", it)
-    return main_solver!(a, it, materials, BC, phase_ratios, nc, Δ, to, nphases, iter_params)
+    return main_solver!(a, it, materials, BC, nc, Δ, to, nphases, iter_params)
 end
 
 # JustPIC advection
-function main_loop(a::Allocs, it, materials, BC, phase_ratios::PhaseRatios, nc, Δ, to, nphases, iter_params)
-
-    main_solver!(a, it, materials, BC, tphase_ratios, nc, Δ, to, nphases, iter_params)
+function main_loop(a::Allocs, adv::JustPICAdvection, it, materials, BC, nc, Δ, to, nphases, iter_params)
+    main_solver!(a, it, materials, BC, nc, Δ, to, nphases, iter_params)
 
     @timeit to "Advection" begin
-        advection!(adv.particles, RungeKutta4(), (a.V.x, a.V.y), adv.grid_vi, Δ.t)
+        Vx_adv = a.V.x[2:end-1, 2:end-1]
+        Vy_adv = a.V.y[2:end-1, 2:end-1]
+        advection!(adv.particles, RungeKutta4(), (Vx_adv, Vy_adv), adv.grid_vi, Δ.t)
         move_particles!(adv.particles, adv.xvi, adv.particle_args)
+        inject_particles_phase!(adv.particles, adv.particle_args[1], (), (), adv.xvi)
+        update_phase_ratios!(adv.phase_ratios, adv.particles, (a.X.c.x, a.X.c.y), adv.xvi, adv.particle_args[1])
     end
 end

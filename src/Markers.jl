@@ -90,7 +90,7 @@ function SetPhaseRatios!(phase_ratios, phase_weights, m, xce, yce, xve, yve, Δ,
     end
 end
 
-function update_JustPIC!(a::Allocs, phase_ratios::PhaseRatios, particles, phases)
+function update_JustPIC!(a, phase_ratios, particles, phases)
     update_phase_ratios!(phase_ratios, particles, phases)
     @views begin
         a.phase_ratios.c[2:end-1, 2:end-1] .= phase_ratios.center

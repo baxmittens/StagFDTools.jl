@@ -46,6 +46,7 @@ end
 module Stokes
 using LinearAlgebra, StaticArrays, ExtendableSparse, StagFDTools, StagFDTools.Rheology, DifferentiationInterface
 using TimerOutputs, Printf
+using JustPIC, JustPIC._2D
 include("Stokes.jl")
 export Fields, Ranges, Numbering!, SparsityPattern!, SetRHS!, UpdateSolution!, SetBCVx!, SetBCVy!, set_boundaries_template!, SetBCVx1, SetBCVy1
 export Continuity, SMomentum_x_Generic, SMomentum_y_Generic
@@ -55,8 +56,8 @@ export TangentOperator!, LineSearch!
 include("Markers.jl")
 export InitialiseMarkerField, InitialisePhaseRatios, SetPhaseRatios!, compute_grid_fields!
 include("Main.jl")
-export AbstractSolver, InexactNewton, Direct, Allocs, Solve!, main_loop, IterParams
-export AbstractAdvection, NoAdvection, JustPICAdvection
+export AbstractSolver, Allocs, Solve!, main_loop, IterParams
+export JustPICAdvection
 end
 module StokesDeformed
 using LinearAlgebra, StaticArrays, ExtendableSparse, StaticArrays, StagFDTools, StagFDTools.Rheology
