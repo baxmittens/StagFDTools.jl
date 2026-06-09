@@ -302,14 +302,16 @@ end
 # JustPIC advection
 function main_loop(a::Allocs, adv::JustPICAdvection, it, materials, BC, nc, Δ, to, nphases, iter_params, rvec, err)
 
+    # Update phase_ratios for the solver (includes ghost nodes)
     update_JustPIC!(a, adv.phase_ratios, adv.particles, adv.particle_args[1])
+    # Solve
     main_solver!(a, it, materials, BC, nc, Δ, to, nphases, iter_params, rvec, err)
 
     @timeit to "Advection" begin
         V = (a.V.x[2:end-1, 2:end-1], a.V.y[2:end-1, 2:end-1])
-        advection!(adv.particles, RungeKutta4(), V, Δ.t)
+        advection!(adv.particles, RungeKutta2(), V, Δ.t)
         move_particles!(adv.particles, adv.particle_args)
-        # inject_particles_phase!(adv.particles, adv.particle_args[1], (), ())
+        inject_particles!(adv.particles, adv.particle_args[1])
         update_phase_ratios!(adv.phase_ratios, adv.particles, adv.particle_args[1])
     end
 end

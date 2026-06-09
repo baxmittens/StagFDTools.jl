@@ -139,8 +139,10 @@ end
     # for it=1:nt
     record(fig, "results/SimpleShearGarnets.mp4", 1:nt; framerate=15) do it
 
-        Vmax = max(maximum(abs.(a.V.x)), maximum(abs.(a.V.y)))
-        Δ = (x=Δ.x, y=Δ.y, t=C * min(Δ.x, Δ.y) / Vmax)
+        dt = min(Δ.x / maximum(abs.(Array(a.V.x))), Δ.y / maximum(abs.(Array(a.V.y))))
+        dt *= 0.25
+        # Vmax = max(maximum(abs.(a.V.x)), maximum(abs.(a.V.y)))
+        Δ = (x=Δ.x, y=Δ.y, t=dt)
         main_loop(a, adv, it, materials, BC, nc, Δ, to, nphases, iter_params, rvec, err)
 
         #--------------------------------------------#
@@ -185,7 +187,7 @@ end
 let
 
     # Resolution
-    nc = (x=250, y=250)
+    nc = (x=10, y=10)
 
     # # Boundary condition templates
     BCs = [

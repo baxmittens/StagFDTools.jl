@@ -70,8 +70,8 @@ using TimerOutputs
     @views a.phases.c[:, [2,end-1]] .= 3
     FillPhaseRatios!(a)
 
-    rvec = zeros(length(α))
-    err = (x=zeros(niter), y=zeros(niter), p=zeros(niter))
+    rvec = zeros(length(iter_params.α))
+    err = (x=zeros(iter_params.niter), y=zeros(iter_params.niter), p=zeros(iter_params.niter))
     to = TimerOutput()
 
     for it = 1:nt
