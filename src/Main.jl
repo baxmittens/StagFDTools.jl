@@ -25,7 +25,7 @@ struct Solver{t,n,p,M} <: AbstractSolver
     dx::Vector{Float64}
     r::Vector{Float64}
 end
-struct Allocs{RNT,VNT,FNT,SNT,TNT,PNT,DNT,DC,DV,PHNT,G,S<:AbstractSolver}
+struct Allocs{RNT,VNT,FNT,SNT,TNT,PNT,DNT,DC,DV,PHNT,PRNT,G,S<:AbstractSolver}
     solv::S
     R::RNT
     V::VNT
@@ -50,7 +50,7 @@ struct Allocs{RNT,VNT,FNT,SNT,TNT,PNT,DNT,DC,DV,PHNT,G,S<:AbstractSolver}
     D_ctl_v::DV
     𝐷_ctl::DNT
     phases::PHNT
-    phase_ratios::FNT
+    phase_ratios::PRNT
     X::G
 end
 
@@ -71,7 +71,7 @@ function JustPICAdvection(backend, a::Allocs, nxcell, max_xcell, min_xcell, nc, 
     return JustPICAdvection(particles, (grid_vx, grid_vy), xvi, particle_args, phase_ratios)
 end
 
-function allocate(nc, config, x, y, Δ)
+function allocate(nc, config, x, y, Δ, nphases)
     inx_Vx, iny_Vx, inx_Vy, iny_Vy, inx_c, iny_c,
     inx_v, iny_v, size_x, size_y, size_c, size_v = Ranges(nc)
 
@@ -127,7 +127,8 @@ function allocate(nc, config, x, y, Δ)
     D_ctl_v = [@MMatrix(zeros(4, 4)) for _ in axes(ε̇.xy, 1), _ in axes(ε̇.xy, 2)]
     𝐷_ctl = (c=D_ctl_c, v=D_ctl_v)
     phases = (c=ones(Int64, size_c...), v=ones(Int64, size_v...))
-    phase_ratios = (c=zeros(size_c...), v=zeros(size_v...))
+    phase_ratios = (c=[zeros(nphases) for _ in axes(ε̇.xx, 1), _ in axes(ε̇.xx, 2)],
+        v=[zeros(nphases) for _ in axes(ε̇.xy, 1), _ in axes(ε̇.xy, 2)])
     X = GenerateGrid(x, y, Δ, nc)
 
     return type, number, pattern, nVx, nVy, nPt,
@@ -150,11 +151,11 @@ function allocate_matrices(nVx, nVy, nPt)
     return M, 𝐊, 𝐐, 𝐐ᵀ, 𝐏, dx, r
 end
 
-function Allocs(nc, config, x, y, Δ)
+function Allocs(nc, config, x, y, Δ, nphases)
     type, number, pattern, nVx, nVy, nPt,
     R, V, Vi, η, ξ, λ̇, G, β, ρ, ε̇, τ0, τ,
     Pt, Pti, Pt0, ΔPt, Dc, Dv, 𝐷, D_ctl_c, D_ctl_v, 𝐷_ctl, phases, phase_ratios, X =
-        allocate(nc, config, x, y, Δ)
+        allocate(nc, config, x, y, Δ, nphases)
 
     M, 𝐊, 𝐐, 𝐐ᵀ, 𝐏, dx, r = allocate_matrices(nVx, nVy, nPt)
     M_PC, 𝐊_PC, 𝐐_PC, 𝐐ᵀ_PC, 𝐏_PC, _, _ = allocate_matrices(nVx, nVy, nPt)
@@ -231,9 +232,7 @@ function main_solver!(a::Allocs, it, materials, BC, nc, Δ, to, nphases, iter_pa
     nVy = maximum(a.number.Vy)
     nPt = maximum(a.number.Pt)
 
-    phase_ratios = a.phase_ratios
-
-    compute_grid_fields!(a.G, a.β, a.ρ, a.ξ, materials, phase_ratios, nc, nphases)
+    compute_grid_fields!(a.G, a.β, a.ρ, a.ξ, materials, a.phase_ratios, nc, nphases)
 
     @printf("Time step %04d (nthreads = %03d)\n", it, Threads.nthreads())
     iter, ϵ0, ϵ = 0, 0.0, 0.0
@@ -243,7 +242,7 @@ function main_solver!(a::Allocs, it, materials, BC, nc, Δ, to, nphases, iter_pa
         @printf("Iteration %04d\n", iter)
 
         @timeit to "Residual" begin
-            TangentOperator!(a.𝐷, a.𝐷_ctl, a.τ, a.τ0, a.ε̇, a.λ̇, a.η, a.G, a.V, a.Pt, a.Pt0, a.ΔPt, a.type, BC, materials, phase_ratios, Δ)
+            TangentOperator!(a.𝐷, a.𝐷_ctl, a.τ, a.τ0, a.ε̇, a.λ̇, a.η, a.G, a.V, a.Pt, a.Pt0, a.ΔPt, a.type, BC, materials, a.phase_ratios, Δ)
             ResidualContinuity2D!(a.R, a.V, a.Pt, a.Pt0, a.ΔPt, a.τ0, a.𝐷, a.β, a.ξ, materials, a.number, a.type, BC, nc, Δ)
             ResidualMomentum2D_x!(a.R, a.V, a.Pt, a.Pt0, a.ΔPt, a.τ0, a.𝐷, a.G, materials, a.number, a.type, BC, nc, Δ)
             ResidualMomentum2D_y!(a.R, a.V, a.Pt, a.Pt0, a.ΔPt, a.τ0, a.𝐷, a.G, a.ρ, materials, a.number, a.type, BC, nc, Δ)
@@ -257,7 +256,7 @@ function main_solver!(a::Allocs, it, materials, BC, nc, Δ, to, nphases, iter_pa
         ϵ < iter_params.ϵ_nl && break
 
         SetRHS!(a.r, a.R, a.number, a.type, nc)
-        Solve!(a, materials, BC, phase_ratios, nc, Δ, to, rvec, iter, ϵ0, ϵ, iter_params)
+        Solve!(a, materials, BC, a.phase_ratios, nc, Δ, to, rvec, iter, ϵ0, ϵ, iter_params)
     end
 
     a.Pt .+= a.ΔPt.c
@@ -266,7 +265,9 @@ function main_solver!(a::Allocs, it, materials, BC, nc, Δ, to, nphases, iter_pa
 end
 
 # No advection
-function main_loop(a::Allocs, it, materials, BC, phase_ratios::Nothing, nc, Δ, to, nphases, iter_params)
+main_loop(a, it, materials, BC, nc, Δ, to, nphases, iter_params) = main_loop(a, nothing, it, materials, BC, nc, Δ, to, nphases, iter_params)
+
+function main_loop(a::Allocs, adv::Nothing, it, materials, BC, nc, Δ, to, nphases, iter_params)
     @printf("Step %04d\n", it)
     return main_solver!(a, it, materials, BC, nc, Δ, to, nphases, iter_params)
 end
@@ -274,6 +275,7 @@ end
 # JustPIC advection
 function main_loop(a::Allocs, adv::JustPICAdvection, it, materials, BC, nc, Δ, to, nphases, iter_params)
     main_solver!(a, it, materials, BC, nc, Δ, to, nphases, iter_params)
+    println("everything works"), error()
 
     @timeit to "Advection" begin
         Vx_adv = a.V.x[2:end-1, 2:end-1]

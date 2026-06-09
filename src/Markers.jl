@@ -27,22 +27,17 @@ function InitialisePhaseRatios(nphases::Int64, f)
     return phase_ratios, phase_weights
 end
 
-function InitialisePhaseRatios(phases::NamedTuple, nphases::Int)
-    c = [
-        let r = zeros(nphases)
-            r[phases.c[i, j]] = 1.0
-            r
-        end
-        for i in axes(phases.c, 1), j in axes(phases.c, 2)
-    ]
-    v = [
-        let r = zeros(nphases)
-            r[phases.v[i, j]] = 1.0
-            r
-        end
-        for i in axes(phases.v, 1), j in axes(phases.v, 2)
-    ]
-    return (c=c, v=v)
+function FillPhaseRatios!(a)
+    _fill_phase_ratios!(a.phase_ratios.c, a.phases.c)
+    _fill_phase_ratios!(a.phase_ratios.v, a.phases.v)
+    return nothing
+end
+
+function _fill_phase_ratios!(phase_ratios::AbstractMatrix{<:AbstractVector}, phases)
+    @inbounds for j in axes(phases, 2), i in axes(phases, 1)
+        fill!(phase_ratios[i, j], 0.0)
+        phase_ratios[i, j][phases[i, j]] = 1.0
+    end
 end
 
 function MarkerWeight(xm, x, Δx)

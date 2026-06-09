@@ -25,14 +25,14 @@ using TimerOutputs
     # Solver parameters
     iter_params = IterParams() # default parameters
 
-    # Grid
+    # X
     L = (x=1.0, y=1.0)
     Δ = (x=L.x/nc.x, y=L.y/nc.y, t=Δt0)
     x = (min=-L.x/2, max=L.x/2)
     y = (min=-L.y,   max=0.0)
 
     # Allocate all fields and solver structures
-    a = Allocs(InexactNewton, nc, config, x, y, Δ)
+    a = Allocs(nc, config, x, y, Δ, nphases)
     # Default (Direct): a = Allocs(nc, config, x, y, Δ)
 
     inx_Vx, iny_Vx, inx_Vy, iny_Vy, inx_c, iny_c, inx_v, iny_v, size_x, size_y, size_c, size_v = Ranges(nc)
@@ -44,8 +44,8 @@ using TimerOutputs
     yc = LinRange(-L.y/2+Δ.y/2, L.y/2-Δ.y/2, nc.y)
 
     # Initial velocity & pressure
-    @views a.V.x .= D_BC[1,1]*a.Grid.vx_e.x .+ D_BC[1,2]*a.Grid.vx_e.y'
-    @views a.V.y .= D_BC[2,1]*a.Grid.vy_e.x .+ D_BC[2,2]*a.Grid.vy_e.y'
+    @views a.V.x .= D_BC[1,1]*a.X.vx_e.x .+ D_BC[1,2]*a.X.vx_e.y'
+    @views a.V.y .= D_BC[2,1]*a.X.vy_e.x .+ D_BC[2,2]*a.X.vy_e.y'
     @views a.Pt[inx_c, iny_c] .= 10.
     UpdateSolution!(a.V, a.Pt, a.dx, a.number, a.type, nc)
 
@@ -54,12 +54,12 @@ using TimerOutputs
     @views begin
         BC.Vx[2, iny_Vx]       .= (a.type.Vx[1, iny_Vx]   .== :Neumann_normal)   .* D_BC[1,1]
         BC.Vx[end-1, iny_Vx]   .= (a.type.Vx[end, iny_Vx] .== :Neumann_normal)   .* D_BC[1,1]
-        BC.Vx[inx_Vx, 2]       .= (a.type.Vx[inx_Vx, 2]   .== :Neumann_tangent)  .* D_BC[1,2] .+ (a.type.Vx[inx_Vx, 2]   .== :Dirichlet_tangent) .* (D_BC[1,1]*a.Grid.v.x .+ D_BC[1,2]*a.Grid.v.y[1])
-        BC.Vx[inx_Vx, end-1]   .= (a.type.Vx[inx_Vx,end-1].== :Neumann_tangent)  .* D_BC[1,2] .+ (a.type.Vx[inx_Vx,end-1].== :Dirichlet_tangent) .* (D_BC[1,1]*a.Grid.v.x .+ D_BC[1,2]*a.Grid.v.y[end])
+        BC.Vx[inx_Vx, 2]       .= (a.type.Vx[inx_Vx, 2]   .== :Neumann_tangent)  .* D_BC[1,2] .+ (a.type.Vx[inx_Vx, 2]   .== :Dirichlet_tangent) .* (D_BC[1,1]*a.X.v.x .+ D_BC[1,2]*a.X.v.y[1])
+        BC.Vx[inx_Vx, end-1]   .= (a.type.Vx[inx_Vx,end-1].== :Neumann_tangent)  .* D_BC[1,2] .+ (a.type.Vx[inx_Vx,end-1].== :Dirichlet_tangent) .* (D_BC[1,1]*a.X.v.x .+ D_BC[1,2]*a.X.v.y[end])
         BC.Vy[inx_Vy, 2]       .= (a.type.Vy[inx_Vy, 1]   .== :Neumann_normal)   .* D_BC[2,2]
         BC.Vy[inx_Vy, end-1]   .= (a.type.Vy[inx_Vy, end] .== :Neumann_normal)   .* D_BC[2,2]
-        BC.Vy[2, iny_Vy]        .= (a.type.Vy[2, iny_Vy]   .== :Neumann_tangent)  .* D_BC[2,1] .+ (a.type.Vy[2, iny_Vy]   .== :Dirichlet_tangent) .* (D_BC[2,1]*a.Grid.v.x[1]   .+ D_BC[2,2]*a.Grid.v.y)
-        BC.Vy[end-1, iny_Vy]   .= (a.type.Vy[end-1,iny_Vy].== :Neumann_tangent)  .* D_BC[2,1] .+ (a.type.Vy[end-1,iny_Vy].== :Dirichlet_tangent) .* (D_BC[2,1]*a.Grid.v.x[end] .+ D_BC[2,2]*a.Grid.v.y)
+        BC.Vy[2, iny_Vy]        .= (a.type.Vy[2, iny_Vy]   .== :Neumann_tangent)  .* D_BC[2,1] .+ (a.type.Vy[2, iny_Vy]   .== :Dirichlet_tangent) .* (D_BC[2,1]*a.X.v.x[1]   .+ D_BC[2,2]*a.X.v.y)
+        BC.Vy[end-1, iny_Vy]   .= (a.type.Vy[end-1,iny_Vy].== :Neumann_tangent)  .* D_BC[2,1] .+ (a.type.Vy[end-1,iny_Vy].== :Dirichlet_tangent) .* (D_BC[2,1]*a.X.v.x[end] .+ D_BC[2,2]*a.X.v.y)
     end
 
     # Phase geometry
@@ -69,13 +69,13 @@ using TimerOutputs
     @views a.phases.v[:, [2,end-1]] .= 3
     @views a.phases.c[[2,end-1], :] .= 3
     @views a.phases.c[:, [2,end-1]] .= 3
-    phase_ratios = InitialisePhaseRatios(a.phases, nphases)
+     FillPhaseRatios!(a)
 
     to = TimerOutput()
 
     for it = 1:nt
 
-        iter, err = main_loop(a, it, materials, BC, phase_ratios, nc, Δ, to, nphases, iter_params)
+        iter, err = main_loop(a, it, materials, BC, nc, Δ, to, nphases, iter_params)
 
         fig = Figure(size=(900,700), fontsize=14)
 

@@ -98,7 +98,7 @@ end
     y = (min=-L.y, max=0.0)
 
     # Allocate all fields and solver structures
-    a = Allocs(nc, config, x, y, Δ)
+    a = Allocs(nc, config, x, y, Δ, nphases)
 
     inx_Vx, iny_Vx, inx_Vy, iny_Vy, inx_c, iny_c, inx_v, iny_v, size_x, size_y, size_c, size_v = Ranges(nc)
 
