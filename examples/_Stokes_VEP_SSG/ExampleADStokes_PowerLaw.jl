@@ -2,6 +2,7 @@ using StagFDTools, StagFDTools.Stokes, StagFDTools.Rheology, ExtendableSparse, S
 import Statistics:mean
 using DifferentiationInterface
 using TimerOutputs
+using ProfileView
 
 @views function main(nc)
 
@@ -77,6 +78,7 @@ using TimerOutputs
     for it = 1:nt
 
         iter, err = main_loop(a, it, materials, BC, nc, Δ, to, nphases, iter_params, rvec, err)
+        # ProfileView.@profview main_loop(a, it, materials, BC, nc, Δ, to, nphases, iter_params, rvec, err)
 
         fig = Figure(size=(900,700), fontsize=14)
 
@@ -106,5 +108,5 @@ end
 
 
 let
-    main((x = 200, y = 200))
+    main((x = 10, y = 10))
 end

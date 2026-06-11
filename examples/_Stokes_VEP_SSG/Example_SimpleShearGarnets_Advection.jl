@@ -6,6 +6,7 @@ import JustPIC.@index
 const backend = JustPIC.CPUBackend
 using DifferentiationInterface
 using TimerOutputs, GridGeometryUtils
+using BenchmarkTools
 
 
 function set_phases!(phases, particles, garnets, micas, layering)
@@ -79,12 +80,12 @@ end
 
     # Time steps
     Δt0 = 0.5
-    nt = 100
+    nt = 5
     ALE = true
     C = 0.5
 
     # Solver parameters
-    iter_params = IterParams(niter=1, ϵ_nl=1e-8, α=LinRange(0.05, 1.0, 10)) # default parameters
+    iter_params = IterParams(niter=2, ϵ_nl=1e-8, α=LinRange(0.05, 1.0, 10)) # default parameters
 
     # X
     L = (x=1.0, y=1.0)
@@ -141,9 +142,10 @@ end
         # record(fig, "results/SimpleShearGarnets.mp4", 1:nt; framerate=15) do it
 
         dt = min(Δ.x / maximum(abs.(Array(a.V.x))), Δ.y / maximum(abs.(Array(a.V.y))))
-        dt *= 0.75
+        dt *= 0.6
         Δ = (x=Δ.x, y=Δ.y, t=dt)
-        main_loop(a, adv, it, materials, BC, nc, Δ, to, nphases, iter_params, rvec, err)
+        @time main_loop(a, adv, it, materials, BC, nc, Δ, to, nphases, iter_params, rvec, err)
+        # @benchmark main_loop($a, $adv, $it, $materials, $BC, $nc, $Δ, $to, $nphases, $iter_params, $rvec, $err)
         # main_loop(a, it, materials, BC, nc, Δ, to, nphases, iter_params, rvec, err)
 
         #--------------------------------------------#
@@ -188,7 +190,7 @@ end
 let
 
     # Resolution
-    nc = (x=100, y=100)
+    nc = (x=99, y=99)
 
     # # Boundary condition templates
     BCs = [

@@ -6,7 +6,7 @@ Base.@kwdef struct IterParams
     ϵ_l::Float64 = 1e-11
     ϵ_nl::Float64 = 1e-8
     inexact::Bool = false
-    solver_type::Symbol = :PH
+    solver_type::Symbol = :GCR
     α::Vector{Float64} = collect(LinRange(0.05, 1.0, 6))
 end
 Base.@kwdef struct VonMises{T} <: AbstractPlasticity

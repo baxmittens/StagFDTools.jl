@@ -3,13 +3,12 @@ abstract type AbstractMarkers end
 struct NoMarkers <: AbstractMarkers end
 
 # Keeping a Solver struct if one wants to add solvers
-struct JustPICAdvection{P,G,X,PA,PR,PB}
+struct JustPICAdvection{P,G,X,PA,PR}
     particles::P
     grid_vi::G
     xvi::X
     particle_args::PA
     phase_ratios::PR
-    periodic::PB  # (periodic_x, periodic_y)
 end
 struct Solver{t,n,p,M} <: AbstractSolver
     type::t
@@ -73,7 +72,7 @@ function Base.getproperty(a::Allocs, s::Symbol)
     return getproperty(getfield(a, :solv), s)
 end
 
-function JustPICAdvection(backend, a::Allocs, nxcell, max_xcell, min_xcell, nc, nphases, args; periodic=(false, false))
+function JustPICAdvection(backend, a::Allocs, nxcell, max_xcell, min_xcell, nc, nphases, args)
     grid_vx = (a.X.v.x, a.X.c_e.y)
     grid_vy = (a.X.c_e.x, a.X.v.y)
     xi_vel = (grid_vx, grid_vy)
@@ -82,7 +81,7 @@ function JustPICAdvection(backend, a::Allocs, nxcell, max_xcell, min_xcell, nc, 
     particles = init_particles(backend, nxcell, max_xcell, min_xcell, xi_vel)
     particle_args = init_cell_arrays(particles, Val(args))
     phase_ratios = JustPIC._2D.PhaseRatios(backend, nphases, values(nc))
-    return JustPICAdvection(particles, (grid_vx, grid_vy), xvi, particle_args, phase_ratios, periodic)
+    return JustPICAdvection(particles, xi_vel, xvi, particle_args, phase_ratios)
 end
 
 function allocate(nc, config, x, y, Δ, nphases)
@@ -218,8 +217,7 @@ function _assemble!(a::Allocs, materials, BC, nc, Δ)
         materials, a.number, a.pattern, a.type, BC, nc, Δ)
 end
 
-function update_solution!(a::Allocs, materials, BC, phase_ratios, nc, Δ, to,
-    rvec, iter, ϵ0, ϵ, iter_params)
+function update_solution!(a::Allocs, materials, BC, phase_ratios, nc, Δ, to, rvec, iter, ϵ0, ϵ, iter_params)
     a.𝐊 .= [a.M.Vx.Vx a.M.Vx.Vy; a.M.Vy.Vx a.M.Vy.Vy]
     a.𝐐 .= [a.M.Vx.Pt; a.M.Vy.Pt]
     a.𝐐ᵀ .= [a.M.Pt.Vx a.M.Pt.Vy]
