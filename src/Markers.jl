@@ -15,18 +15,6 @@ function InitialiseMarkerField(nc, nmpc, L, Δ, x, y, noise)
     return (Xm=Xm, Ym=Ym, xm=xm, ym=ym, Δm=Δm, num=num, phase=mphase)
 end
 
-function InitialisePhaseRatios(nphases::Int64, f)
-    phase_ratios = (
-        c=[zeros(nphases) for _ in axes(f.xx, 1), _ in axes(f.xx, 2)],
-        v=[zeros(nphases) for _ in axes(f.xy, 1), _ in axes(f.xy, 2)],
-    )
-    phase_weights = (
-        c=[zeros(nphases) for _ in axes(f.xx, 1), _ in axes(f.xx, 2)],
-        v=[zeros(nphases) for _ in axes(f.xy, 1), _ in axes(f.xy, 2)],
-    )
-    return phase_ratios, phase_weights
-end
-
 function FillPhaseRatios!(a)
     _fill_phase_ratios!(a.phase_ratios.c, a.phases.c)
     _fill_phase_ratios!(a.phase_ratios.v, a.phases.v)

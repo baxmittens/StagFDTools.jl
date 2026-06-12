@@ -23,7 +23,7 @@ using TimerOutputs
     nt  = 1
 
     # Solver parameters
-    iter_params = IterParams(solver_type=:PH) # default parameters
+    iter_params = IterParams(solver_type=:GCR) # default parameters
 
     # X
     L = (x=1.0, y=1.0)

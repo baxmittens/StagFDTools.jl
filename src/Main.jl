@@ -1,4 +1,3 @@
-abstract type AbstractSolver end
 abstract type AbstractMarkers end
 struct NoMarkers <: AbstractMarkers end
 
@@ -10,7 +9,16 @@ struct JustPICAdvection{P,G,X,PA,PR}
     particle_args::PA
     phase_ratios::PR
 end
-struct Solver{t,n,p,M} <: AbstractSolver
+struct Markers{Xm,xm,dm,n,ph} <: AbstractMarkers
+    Xm::Xm
+    Ym::Xm
+    xm::xm
+    ym::xm
+    Δm::dm
+    num::n
+    phase::ph
+end
+struct Allocs{t,n,p,M,RNT,VNT,FNT,SNT,TNT,PNT,DNT,DC,DV,PHNT,PRNT,G,MR<:AbstractMarkers}
     type::t
     number::n
     pattern::p
@@ -26,19 +34,7 @@ struct Solver{t,n,p,M} <: AbstractSolver
     𝐏_PC::ExtendableSparseMatrix
     dx::Vector{Float64}
     r::Vector{Float64}
-end
-struct Markers{Xm,xm,dm,n,ph} <: AbstractMarkers
-    Xm::Xm
-    Ym::Xm
-    xm::xm
-    ym::xm
-    Δm::dm
-    num::n
-    phase::ph
-end
-struct Allocs{RNT,VNT,FNT,SNT,TNT,PNT,DNT,DC,DV,PHNT,PRNT,G,S<:AbstractSolver,M<:AbstractMarkers}
-    solv::S
-    m::M
+    m::MR
     R::RNT
     V::VNT
     Vi::VNT
@@ -64,12 +60,6 @@ struct Allocs{RNT,VNT,FNT,SNT,TNT,PNT,DNT,DC,DV,PHNT,PRNT,G,S<:AbstractSolver,M<
     phases::PHNT
     phase_ratios::PRNT
     X::G
-end
-
-const _allocs_own_fields = fieldnames(Allocs)
-function Base.getproperty(a::Allocs, s::Symbol)
-    s ∈ _allocs_own_fields && return getfield(a, s)
-    return getproperty(getfield(a, :solv), s)
 end
 
 function JustPICAdvection(backend, a::Allocs, nxcell, max_xcell, min_xcell, nc, nphases, args)
@@ -173,10 +163,8 @@ function Allocs(nc, config, x, y, Δ, nphases)
     M, 𝐊, 𝐐, 𝐐ᵀ, 𝐏, dx, r = allocate_matrices(nVx, nVy, nPt)
     M_PC, 𝐊_PC, 𝐐_PC, 𝐐ᵀ_PC, 𝐏_PC, _, _ = allocate_matrices(nVx, nVy, nPt)
 
-    solv = Solver(type, number, pattern,
-        M, M_PC, 𝐊, 𝐊_PC, 𝐐, 𝐐_PC, 𝐐ᵀ, 𝐐ᵀ_PC, 𝐏, 𝐏_PC, dx, r)
-
-    return Allocs(solv, NoMarkers(), R, V, Vi, η, ξ, λ̇, G, β, ρ, ε̇, τ0, τ,
+    return Allocs(type, number, pattern,
+        M, M_PC, 𝐊, 𝐊_PC, 𝐐, 𝐐_PC, 𝐐ᵀ, 𝐐ᵀ_PC, 𝐏, 𝐏_PC, dx, r, NoMarkers(), R, V, Vi, η, ξ, λ̇, G, β, ρ, ε̇, τ0, τ,
         Pt, Pti, Pt0, ΔPt, Dc, Dv, 𝐷, D_ctl_c, D_ctl_v, 𝐷_ctl, phases, phase_ratios, X)
 end
 
@@ -189,14 +177,12 @@ function Allocs(nc, config, x, y, Δ, nphases, nmpc, noise)
     M, 𝐊, 𝐐, 𝐐ᵀ, 𝐏, dx, r = allocate_matrices(nVx, nVy, nPt)
     M_PC, 𝐊_PC, 𝐐_PC, 𝐐ᵀ_PC, 𝐏_PC, _, _ = allocate_matrices(nVx, nVy, nPt)
 
-    solv = Solver(type, number, pattern,
-        M, M_PC, 𝐊, 𝐊_PC, 𝐐, 𝐐_PC, 𝐐ᵀ, 𝐐ᵀ_PC, 𝐏, 𝐏_PC, dx, r)
-
     L = (x=x.max - x.min, y=y.max - y.min)
     mf = InitialiseMarkerField(nc, nmpc, L, Δ, x, y, noise)
     m = Markers(mf.Xm, mf.Ym, mf.xm, mf.ym, mf.Δm, mf.num, mf.phase)
 
-    return Allocs(solv, m, R, V, Vi, η, ξ, λ̇, G, β, ρ, ε̇, τ0, τ,
+    return Allocs(type, number, pattern,
+        M, M_PC, 𝐊, 𝐊_PC, 𝐐, 𝐐_PC, 𝐐ᵀ, 𝐐ᵀ_PC, 𝐏, 𝐏_PC, dx, r, m, R, V, Vi, η, ξ, λ̇, G, β, ρ, ε̇, τ0, τ,
         Pt, Pti, Pt0, ΔPt, Dc, Dv, 𝐷, D_ctl_c, D_ctl_v, 𝐷_ctl, phases, phase_ratios, X)
 end
 
@@ -217,7 +203,7 @@ function _assemble!(a::Allocs, materials, BC, nc, Δ)
         materials, a.number, a.pattern, a.type, BC, nc, Δ)
 end
 
-function update_solution!(a::Allocs, materials, BC, phase_ratios, nc, Δ, to, rvec, iter, ϵ0, ϵ, iter_params)
+function update_solution!(a::Allocs, materials, BC, nc, Δ, to, rvec, iter, ϵ0, ϵ, iter_params)
     a.𝐊 .= [a.M.Vx.Vx a.M.Vx.Vy; a.M.Vy.Vx a.M.Vy.Vy]
     a.𝐐 .= [a.M.Vx.Pt; a.M.Vy.Pt]
     a.𝐐ᵀ .= [a.M.Pt.Vx a.M.Pt.Vy]
@@ -235,15 +221,15 @@ function update_solution!(a::Allocs, materials, BC, phase_ratios, nc, Δ, to, rv
     end
 
     @timeit to "Line search" begin
-        imin = LineSearch!(rvec, iter_params.α, a.dx, a.R, a.V, a.Pt, a.ε̇, a.τ, a.Vi, a.Pti, a.ΔPt, a.Pt0, a.τ0, a.λ̇, a.η, a.G, a.β, a.ξ, a.ρ, a.𝐷, a.𝐷_ctl, a.number, a.type, BC, materials, phase_ratios, nc, Δ)
+        imin = LineSearch!(rvec, iter_params.α, a.dx, a.R, a.V, a.Pt, a.ε̇, a.τ, a.Vi, a.Pti, a.ΔPt, a.Pt0, a.τ0, a.λ̇, a.η, a.G, a.β, a.ξ, a.ρ, a.𝐷, a.𝐷_ctl, a.number, a.type, BC, materials, a.phase_ratios, nc, Δ)
     end
     UpdateSolution!(a.V, a.Pt, iter_params.α[imin] * a.dx, a.number, a.type, nc)
 end
 
-function Solve!(a::Allocs, materials, BC, phase_ratios, nc, Δ, to,
+function Solve!(a::Allocs, materials, BC, nc, Δ, to,
     rvec, iter, ϵ0, ϵ, iter_params)
     @timeit to "Assembly" _assemble!(a, materials, BC, nc, Δ)
-    update_solution!(a, materials, BC, phase_ratios, nc, Δ, to, rvec, iter, ϵ0, ϵ, iter_params)
+    update_solution!(a, materials, BC, nc, Δ, to, rvec, iter, ϵ0, ϵ, iter_params)
 end
 
 function main_solver!(a::Allocs, it, materials, BC, nc, Δ, to, nphases, iter_params, rvec, err)
@@ -264,7 +250,7 @@ function main_solver!(a::Allocs, it, materials, BC, nc, Δ, to, nphases, iter_pa
     @printf("Time step %04d (nthreads = %03d)\n", it, Threads.nthreads())
     iter, ϵ0, ϵ = 0, 0.0, 0.0
 
-    @time while iter < iter_params.niter
+    while iter < iter_params.niter
         iter += 1
         @printf("Iteration %04d\n", iter)
 
@@ -275,16 +261,6 @@ function main_solver!(a::Allocs, it, materials, BC, nc, Δ, to, nphases, iter_pa
             ResidualMomentum2D_y!(a.R, a.V, a.Pt, a.Pt0, a.ΔPt, a.τ0, a.𝐷, a.G, a.ρ, materials, a.number, a.type, BC, nc, Δ)
         end
 
-        @show extrema(a.η.c)
-        @show extrema(a.η.v)
-        @show extrema(a.phase_ratios.c)
-        @show extrema(a.phase_ratios.v)
-        # @show extrema(a.𝐷_ctl.c)
-        # @show extrema(a.𝐷_ctl.v)
-        # @show extrema(a.β.c)
-        # @show extrema(a.ξ.c)
-        # @show extrema(a.Pt.c)
-
         err.x[iter] = @views norm(a.R.x[inx_Vx, iny_Vx]) / sqrt(nVx)
         err.y[iter] = @views norm(a.R.y[inx_Vy, iny_Vy]) / sqrt(nVy)
         err.p[iter] = @views norm(a.R.p[inx_c, iny_c]) / sqrt(nPt)
@@ -293,7 +269,7 @@ function main_solver!(a::Allocs, it, materials, BC, nc, Δ, to, nphases, iter_pa
         ϵ < iter_params.ϵ_nl && break
 
         SetRHS!(a.r, a.R, a.number, a.type, nc)
-        Solve!(a, materials, BC, a.phase_ratios, nc, Δ, to, rvec, iter, ϵ0, ϵ, iter_params)
+        Solve!(a, materials, BC, nc, Δ, to, rvec, iter, ϵ0, ϵ, iter_params)
     end
 
     a.Pt .+= a.ΔPt.c
@@ -315,7 +291,7 @@ function main_loop(a::Allocs, adv::JustPICAdvection, it, materials, BC, nc, Δ, 
     # Solve
     main_solver!(a, it, materials, BC, nc, Δ, to, nphases, iter_params, rvec, err)
 
-    V = (a.V.x[2:end-1, 2:end-1], a.V.y[2:end-1, 2:end-1])
+    @views V = (a.V.x[2:end-1, 2:end-1], a.V.y[2:end-1, 2:end-1])
 
     # Advection
     advection!(adv.particles, RungeKutta2(), V, Δ.t)
