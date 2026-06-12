@@ -169,7 +169,7 @@ end
         cm.heatmap!
     end
 
-    # display(to)
+    display(to)
 
     return mean(a.τ.II[inner_x, inner_y]), τIIev
 
@@ -188,7 +188,7 @@ let
         @SMatrix([1 0; 0 -1]),
     ]
 
-    nc = (x=50, y=50)
+    nc = (x=100, y=100)
     nt = 40
 
     # Discretise angle of layer 
