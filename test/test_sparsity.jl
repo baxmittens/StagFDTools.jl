@@ -23,7 +23,7 @@ import StagFDTools.Stokes
         M = Poisson.Fields( Poisson.Fields( ExtendableSparseMatrix(nu, nu) ))
         Poisson.SparsityPattern!(M, number, pattern, nc)
         A = sparse(M.u.u)
-        @test norm(A - A') == 0.0
+        @test A == A'
         @test all(diag(A) .== 1.0)
         # Interior rows couple to at most 5 unknowns
         @test maximum(sum(A .!= 0, dims=2)) <= 5
@@ -33,33 +33,21 @@ import StagFDTools.Stokes
         M9 = Poisson.Fields( Poisson.Fields( ExtendableSparseMatrix(nu, nu) ))
         Poisson.SparsityPattern!(M9, number, pattern9, nc)
         A9 = sparse(M9.u.u)
-        @test norm(A9 - A9') == 0.0
+        @test A9 == A9'
         @test nnz(A9) > nnz(A)
         @test all(A9[findall(!iszero, A)] .== 1.0)
     end
 
     @testset "Stokes" begin
         nc = (x = 4, y = 3)
+        (; size_x, size_y, size_c) = Stokes.Ranges(nc)
 
         type = Stokes.Fields(
-            fill(:out, (nc.x+3, nc.y+4)),
-            fill(:out, (nc.x+4, nc.y+3)),
-            fill(:out, (nc.x+2, nc.y+2)),
+            fill(:out, size_x),
+            fill(:out, size_y),
+            fill(:out, size_c),
         )
-        # -------- Vx -------- #
-        type.Vx[2:end-1,3:end-2] .= :in
-        type.Vx[2,2:end-1]       .= :Dirichlet_normal
-        type.Vx[end-1,2:1:end-1] .= :Dirichlet_normal
-        type.Vx[2:end-1,2]       .= :Dirichlet
-        type.Vx[2:end-1,end-1]   .= :Dirichlet
-        # -------- Vy -------- #
-        type.Vy[2:end-2,2:end-1] .= :in
-        type.Vy[2,2:end-1]       .= :Dirichlet
-        type.Vy[end-1,2:end-1]   .= :Dirichlet
-        type.Vy[2:end-1,2]       .= :Dirichlet_normal
-        type.Vy[2:end-1,end-1]   .= :Dirichlet_normal
-        # -------- Pt -------- #
-        type.Pt[2:end-1,2:end-1] .= :in
+        Stokes.set_boundaries_template!(type, :all_Dirichlet, nc)
 
         pattern = Stokes.Fields(
             Stokes.Fields(@SMatrix([0 1 0; 1 1 1; 0 1 0]),                 @SMatrix([0 0 0 0; 0 1 1 0; 0 1 1 0; 0 0 0 0]), @SMatrix([0 1 0;  0 1 0])),
@@ -68,9 +56,9 @@ import StagFDTools.Stokes
         )
 
         number = Stokes.Fields(
-            fill(0, (nc.x+3, nc.y+4)),
-            fill(0, (nc.x+4, nc.y+3)),
-            fill(0, (nc.x+2, nc.y+2)),
+            fill(0, size_x),
+            fill(0, size_y),
+            fill(0, size_c),
         )
         Stokes.Numbering!(number, type, nc)
 
@@ -87,13 +75,13 @@ import StagFDTools.Stokes
 
         # Velocity block pattern is symmetric
         K = [sparse(M.Vx.Vx) sparse(M.Vx.Vy); sparse(M.Vy.Vx) sparse(M.Vy.Vy)]
-        @test norm(K - K') == 0.0
+        @test K == K'
         @test all(diag(K) .== 1.0)
 
         # Gradient and divergence patterns are transposes of each other
         Q  = [sparse(M.Vx.Pt); sparse(M.Vy.Pt)]
         Qᵀ = [sparse(M.Pt.Vx) sparse(M.Pt.Vy)]
-        @test norm(Q' - Qᵀ) == 0.0
+        @test Q' == Qᵀ
     end
 
 end
