@@ -33,7 +33,7 @@ function Analytical(θ, η, δ, D_BC)
     return τ_II
 end
 
-@views function main(nc, nt, layering, BC_template, D_template, factorization, η1, η2, G1, G2, C1, C2)
+@views function main(nc, nt, layering, BC_template, D_template, factorization, η1, η2, G1, G2, C1, C2; fabric_angle=nothing)
     #--------------------------------------------#   
 
     # Boundary loading type
@@ -49,7 +49,7 @@ end
     preprocess!(materials)
 
     nmpc = (x=4, y=4)
-    noise = false
+    noise = true
 
     # Time steps
     Δt0 = 0.5
@@ -138,35 +138,40 @@ end
         end
         τIIev[it] = mean(a.τ.II[inner_x, inner_y])
 
-        fig = cm.Figure()
-        ax = cm.Axis(fig[1, 1], aspect=cm.DataAspect())
-        hm = cm.heatmap!(ax, a.X.c.x, a.X.c.y, a.τ.II[inx_c, iny_c], colormap=:bluesreds)
-        cm.poly!(ax, cm.Rect(a.X.c_e.x[imin_x], a.X.c_e.y[imin_y], a.X.c_e.x[imax_x] - a.X.c_e.x[imin_x], a.X.c_e.y[imax_y] - a.X.c_e.y[imin_y]), strokecolor=:white, strokewidth=2, color=:transparent)
-        st = 15
-        cm.arrows2d!(ax, a.X.c.x[1:st:end], a.X.c.y[1:st:end], σ1.x[inx_c, iny_c][1:st:end, 1:st:end], σ1.y[inx_c, iny_c][1:st:end, 1:st:end], tiplength=0, lengthscale=0.02, tipwidth=1, color=:white)
-        cm.Colorbar(fig[1, 2], hm, label="τII")
+        cm.with_theme(cm.theme_latexfonts()) do
+            fig = cm.Figure()
+            ax = cm.Axis(fig[1, 1], aspect=cm.DataAspect(), xticks=[-0.5, 0.0, 0.5])
+            hm = cm.heatmap!(ax, a.X.c.x, a.X.c.y, a.τ.II[inx_c, iny_c], colormap=cgrad(:roma, rev=true))
+            cm.poly!(ax, cm.Rect(a.X.c_e.x[imin_x], a.X.c_e.y[imin_y], a.X.c_e.x[imax_x] - a.X.c_e.x[imin_x], a.X.c_e.y[imax_y] - a.X.c_e.y[imin_y]), strokecolor=:white, strokewidth=2, color=:transparent)
+            st = 15
+            cm.arrows2d!(ax, a.X.c.x[1:st:end], a.X.c.y[1:st:end], σ1.x[inx_c, iny_c][1:st:end, 1:st:end], σ1.y[inx_c, iny_c][1:st:end, 1:st:end], tiplength=0, lengthscale=0.02, tipwidth=1, color=:white)
+            cm.Colorbar(fig[1, 2], hm, label=cm.L"$\tau_{II} \ [-]$")
 
-        ax2 = cm.Axis(fig[1, 3], aspect=cm.DataAspect())
-        hm2 = cm.heatmap!(ax2, a.X.c.x, a.X.c.y, a.η.c[inx_c, iny_c], colormap=:bluesreds)
-        cm.Colorbar(fig[1, 4], hm2, label="η")
+            ax2 = cm.Axis(fig[1, 3], aspect=cm.DataAspect(), xticks=[-0.5, 0.0, 0.5])
+            # hm2 = cm.heatmap!(ax2, a.X.c.x, a.X.c.y, a.η.c[inx_c, iny_c], colormap=:roma)
+            hm2 = cm.heatmap!(ax2, a.X.c.x, a.X.c.y, a.ε̇.II[inx_c, iny_c], colormap=cgrad(:roma, rev=true))
+            cm.poly!(ax2, cm.Rect(a.X.c_e.x[imin_x], a.X.c_e.y[imin_y], a.X.c_e.x[imax_x] - a.X.c_e.x[imin_x], a.X.c_e.y[imax_y] - a.X.c_e.y[imin_y]), strokecolor=:white, strokewidth=2, color=:transparent)
+            # cm.Colorbar(fig[1, 4], hm2, label="η")
+            cm.Colorbar(fig[1, 4], hm2, label=cm.L"$\dot\varepsilon_{II}$")
 
-        ax3 = cm.Axis(fig[2, 1], aspect=cm.DataAspect())
-        hm3 = cm.heatmap!(ax3, a.X.c.x, a.X.c.y, a.V.x[inx_Vx, iny_Vx], colormap=:bluesreds)
-        cm.Colorbar(fig[2, 2], hm3, label="Vx")
+            ax3 = cm.Axis(fig[2, 1], aspect=cm.DataAspect(), xticks=([-0.25, 0.25]))
+            hm3 = cm.heatmap!(ax3, a.X.c.x, a.X.c.y, a.V.x[inx_Vx, iny_Vx], colormap=:vik)
+            cm.Colorbar(fig[2, 2], hm3, label=cm.L"$v_y$")
 
-        ax4 = cm.Axis(fig[2, 3], aspect=cm.DataAspect())
-        hm4 = cm.heatmap!(ax4, a.X.c.x, a.X.c.y, a.V.y[inx_Vx, iny_Vx], colormap=:bluesreds)
-        cm.Colorbar(fig[2, 4], hm4, label="Vy")
+            ax4 = cm.Axis(fig[2, 3], aspect=cm.DataAspect(), xticks=([-0.25, 0.25]))
+            hm4 = cm.heatmap!(ax4, a.X.c.x, a.X.c.y, a.V.y[inx_Vx, iny_Vx], colormap=:vik)
+            cm.Colorbar(fig[2, 4], hm4, label=cm.L"$v_y$")
 
-        ax5 = cm.Axis(fig[3, 1:4])
-        cm.xlims!(ax5, 0, nt)
-        # cm.ylims!(ax5, 0, 2.5)
-        cm.lines!(ax5, 1:it, τIIev[1:it])
-        display(fig)
-        display(fig)
+            # ax5_title = fabric_angle === nothing ? "Fabric inclination" : @sprintf("Fabric inclination = %.1f°", rad2deg(fabric_angle))
+            ax5 = cm.Axis(fig[3, 1:4], xlabel="time step", ylabel="τII") #, title=ax5_title)
+            cm.xlims!(ax5, 0, nt)
+            cm.lines!(ax5, 1:it, τIIev[1:it])
+            display(fig)
+            display(fig)
 
-        ax6 = cm.Axis(fig[1, 4])
-        cm.heatmap!
+            ax6 = cm.Axis(fig[1, 4])
+            cm.heatmap!
+        end
     end
 
     display(to)
@@ -188,21 +193,27 @@ let
         @SMatrix([1 0; 0 -1]),
     ]
 
-    nc = (x=100, y=100)
+    nc = (x=50, y=50)
     nt = 40
 
     # Discretise angle of layer 
-    nθ = 1
-    θ = LinRange(-π / 2 + 5, -π / 2 + 5, nθ)
+    nθ = 10
+    θ = LinRange(0, π / 2, nθ)
     τ_cart = zeros(nθ)
     τ_cart_lay = zeros(nθ)
     τ_cart_ana = zeros(nθ)
     τ_time = zeros(nθ, nt)
 
-    #  Anisotropy parameters
-    η2 = 1e2
-    m = 1
-    η1 = η2 / m
+    #  Viscosity
+    m = 6
+    η2 = 1e10
+    η1 = η2
+
+    G2 = 1.
+    G1 = G2
+
+    C2 = 10.
+    C1 = C2 / m
 
     α2 = 0.5
     α1 = 1 - α2
@@ -212,10 +223,6 @@ let
 
     # elasticity
     tmax = 1.0
-    G2 = G1 = 1.0
-    C2 = C1 = 10.
-    C2 = 4.
-    C1 = C2 / 4    # @abacaxi-seco HARDCODED factor 2, to remove
 
     # Run them all
     for iθ in eachindex(θ)
@@ -229,23 +236,22 @@ let
             perturb_width=1.0
         )
 
-        # @abacaxi-seco Note that I switched to LU factorisation as the Jacobian is already not symmetric with elasto-palsticity
-        τ_cart_lay[iθ], τ_time[iθ, :] = main(nc, nt, layering, BCs[1], D_BCs[1], :lu, η1, η2, G1, G2, C1, C2)
+        τ_cart_lay[iθ], τ_time[iθ, :] = main(nc, nt, layering, BCs[1], D_BCs[1], :lu, η1, η2, G1, G2, C1, C2; fabric_angle=θ[iθ])
         τ_cart_ana[iθ] = Analytical(θ[iθ], ηn, δ, D_BCs[1])
 
     end
 
-    ε̇bg = sqrt(sum(1 / 2 .* D_BCs[1][:] .^ 2))
+    # ε̇bg = sqrt(sum(1 / 2 .* D_BCs[1][:] .^ 2))
 
-    # Strongest end-member
-    ηeff = α1 * η1 + α2 * η2
-    @show τstrong = 2 * ηeff * ε̇bg
+    # # Strongest end-member
+    # ηeff = α1 * η1 + α2 * η2
+    # @show τstrong = 2 * ηeff * ε̇bg
 
-    # Weakest end-member
-    ηeff = (α1 / η1 + α2 / η2)^(-1)
-    @show τweak = 2 * ηeff * ε̇bg
+    # # Weakest end-member
+    # ηeff = (α1 / η1 + α2 / η2)^(-1)
+    # @show τweak = 2 * ηeff * ε̇bg
 
-    τ_cart .= τstrong * sqrt.(((δ^2 - 1) * cos.(2 .* θ) .^ 2 .+ 1) / (δ^2))
+    # τ_cart .= τstrong * sqrt.(((δ^2 - 1) * cos.(2 .* θ) .^ 2 .+ 1) / (δ^2))
 
     cm.with_theme(cm.theme_latexfonts()) do
         fig = cm.Figure(fontsize=15)
